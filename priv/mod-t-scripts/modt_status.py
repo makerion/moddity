@@ -6,6 +6,7 @@
 import sys
 import os
 import usb.core
+import usb.backend.libusb1
 import usb.util
 import time
 
@@ -19,13 +20,14 @@ def read_modt(ep):
  return fulltext
 
 # Find MOD-t usb device
-dev = usb.core.find(idVendor=0x2b75, idProduct=0x0002)
+backend = usb.backend.libusb1.get_backend(find_library=lambda x: "/usr/lib/libusb-1.0.so")
+dev = usb.core.find(idVendor=0x2b75, idProduct=0x0002, backend=backend)
 
 # was it found?
 if dev is None:
     raise ValueError('Device not found')
 
-#Finally, loop and query mod-t status every 5 seconds 
+#Finally, loop and query mod-t status every 5 seconds
 #while True:
 dev.write(4, '{"metadata":{"version":1,"type":"status"}}')
 print(read_modt(0x83))
