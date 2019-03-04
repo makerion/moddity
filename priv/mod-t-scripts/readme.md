@@ -1,3 +1,6 @@
+## MOD-t Scripts
+Original source from https://github.com/Xaero252/Mod-T-Scripts
+
 ##First and foremost:
 **USE THESE SCRIPTS AT YOUR OWN RISK!**
 These scripts aren't very well tested and almost none of them are completely finished. They work to interface with the printer but it's all very manual.
@@ -6,7 +9,6 @@ These scripts aren't very well tested and almost none of them are completely fin
 This is a basic set of utility scripts to interface with the New Matter Mod-T 3d printer on Linux. You are free to fork and contribute as you see fit.
 This work falls under the MIT license. See the LICENSE file for more information.
 I must also credit /u/modtdev on reddit for the work on getting the gcode sent to the Mod-T
-
 
 ###Depdencies
 
