@@ -3,6 +3,8 @@ defmodule Moddity.FakeDriver do
 
   import Process, only: [{:send_after, 3}]
 
+  defstruct []
+
   @status_template %{
     "error" => 0,
     "job" => %{
