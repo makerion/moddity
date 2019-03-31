@@ -6,6 +6,7 @@
 import sys
 import os
 import usb.core
+import usb.backend.libusb1
 import usb.util
 import time
 
@@ -20,7 +21,8 @@ def read_modt(ep):
 
 #Find the Mod-T - we should probably see if it's in DFU mode, too
 #That way we can do emergency flashes from recovery mode
-dev = usb.core.find(idVendor=0x2b75, idProduct=0x0002)
+backend = usb.backend.libusb1.get_backend(find_library=lambda x: "/usr/lib/libusb-1.0.so")
+dev = usb.core.find(idVendor=0x2b75, idProduct=0x0002, backend=backend)
 
 #If we didn't find a Mod-T we need to throw an error
 if dev is None:
@@ -34,8 +36,3 @@ dev.set_configuration()
 
 dev.write(2, bytearray.fromhex('246c0093ff'))
 dev.write(2, '{"transport":{"attrs":["request","twoway"],"id":11},"data":{"command":{"idx":51,"name":"unload_initiate"}}};')
-
-while True:
- dev.write(4, '{"metadata":{"version":1,"type":"status"}}')
- print(read_modt(0x83))
- time.sleep(5)

@@ -47,17 +47,33 @@ defmodule Moddity.FakeDriver do
     GenServer.call(__MODULE__, {:get_status})
   end
 
+  def load_filament do
+    GenServer.call(__MODULE__, {:load_filament})
+  end
+
   def send_gcode(_file) do
     GenServer.call(__MODULE__, {:send_gcode})
+  end
+
+  def unload_filament do
+    GenServer.call(__MODULE__, {:unload_filament}, @timeout)
   end
 
   def handle_call({:get_status}, _from, state) do
     {:reply, {:ok, state}, state}
   end
 
+  def handle_call({:load_filament}, _from, state) do
+    {:reply, :ok, state}
+  end
+
   def handle_call({:send_gcode}, _from, _state) do
     send_after(self(), {:update_state, :state_job_queued}, 10_000)
     {:reply, :ok, state_file_rx()}
+  end
+
+  def handle_call({:unload_filament}, _from, state) do
+    {:reply, :ok, state}
   end
 
   def handle_info({:update_state, :idle_state}, _state) do
