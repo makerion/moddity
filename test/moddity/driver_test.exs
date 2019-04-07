@@ -4,7 +4,7 @@ defmodule Moddity.DriverTest do
   import Mox
 
   alias Moddity.Backend.Mock
-  alias Moddity.Driver
+  alias Moddity.{Driver, PrinterStatus}
 
   doctest Moddity.Driver
 
@@ -16,25 +16,36 @@ defmodule Moddity.DriverTest do
   end
 
   test "get_status returns the status from the printer", %{pid: pid} do
-    status = {:ok, %{test_status: true}}
-    expect(Mock, :get_status, fn -> status end)
+    expect(Mock, :get_status, fn -> {:ok, idle_status()} end)
     allow(Mock, self(), pid)
 
-    assert status == Driver.get_status(pid: pid)
+    assert {:ok, idle_status()} == Driver.get_status(pid: pid)
   end
 
-  test "when send_gcode is executing, the genserver responds to status requests appropriately", %{pid: pid} do
-    status = {:ok, %{thing: :true}}
+  test "get_status caches printer status for one second", %{pid: pid} do
+    expect(Mock, :get_status, fn -> {:ok, idle_status()} end)
+    allow(Mock, self(), pid)
 
+    assert {:ok, idle_status()} == Driver.get_status(pid: pid)
+    :timer.sleep(200)
+    assert {:ok, idle_status()} == Driver.get_status(pid: pid)
+  end
+
+  test "when send_gcode is being sent, the printer is not idle", %{pid: pid} do
     Mock
-    |> expect(:get_status, fn -> status end)
-    |> expect(:send_gcode, fn _file -> :timer.sleep(10000)
-      :ok end)
+    |> expect(:send_gcode, fn _file ->
+      :timer.sleep(1000)
+      :ok
+    end)
     |> allow(self(), pid)
 
-    assert status == Driver.get_status(pid: pid)
-    task = Task.async( fn -> assert :ok = Driver.send_gcode("whatever") end)
-    assert {:ok, %{status: "IN_USE"}} == Driver.get_status(pid: pid)
-    Task.await(task, 15_000)
+    send_gcode_task = Task.async(fn -> assert :ok = Driver.send_gcode("my_fine_print.gcode") end)
+    :timer.sleep(1)
+    assert {:ok, %PrinterStatus{idle?: false, state: :sending_gcode}} = Driver.get_status(pid: pid)
+    Task.await(send_gcode_task, 15_000)
+  end
+
+  defp idle_status do
+    %PrinterStatus{idle?: true}
   end
 end

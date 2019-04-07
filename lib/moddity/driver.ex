@@ -6,6 +6,8 @@ defmodule Moddity.Driver do
 
   defstruct []
 
+  alias Moddity.PrinterStatus
+
   def start_link(opts) do
     name = Keyword.get(opts, :name, __MODULE__)
     GenServer.start_link(__MODULE__, opts, name: name)
@@ -13,12 +15,20 @@ defmodule Moddity.Driver do
 
   def init(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {:ok, %{backend: backend, last_status: nil}}
+
+    {:ok,
+     %{
+       backend: backend,
+       caller: nil,
+       command_in_progress: false,
+       last_status_fetch: 0,
+       status: nil
+     }}
   end
 
   def get_status(opts \\ []) do
     pid = Keyword.get(opts, :pid, __MODULE__)
-    GenServer.call(pid, {:get_status}, @timeout)
+    GenServer.call(pid, {:get_status, System.monotonic_time(:millisecond)}, @timeout)
   end
 
   def load_filament(opts \\ []) do
@@ -36,10 +46,22 @@ defmodule Moddity.Driver do
     GenServer.call(pid, {:unload_filament}, @timeout)
   end
 
-  def handle_call({:get_status}, _from, state) do
-    case state.backend.get_status do
-      {:ok, status} -> {:reply, {:ok, status}, %{state | last_status: status}}
-      {:error, error} -> {:reply, {:error, error}, state}
+  def handle_call({:get_status, _}, _from, state = %{command_in_progress: true}) do
+    {:reply, {:ok, state.status}, state}
+  end
+
+  def handle_call({:get_status, now}, _from, state = %{last_status_fetch: fetched}) when now > fetched + 1000 do
+    {:reply, {:ok, state.status}, state}
+  end
+
+  def handle_call({:get_status, _}, _from, state) do
+    case state.backend.get_status() do
+      {:ok, status} ->
+        timestamp = System.monotonic_time()
+        {:reply, {:ok, status}, %{state | status: status, last_status_fetch: timestamp}}
+
+      {:error, error} ->
+        {:reply, {:error, error}, state}
     end
   end
 
@@ -52,7 +74,9 @@ defmodule Moddity.Driver do
 
   def handle_call({:send_gcode, file}, from, state) do
     Task.async(fn -> state.backend.send_gcode(file) end)
-    {:noreply, Map.merge(state, %{from: from})}
+    status = %PrinterStatus{idle?: false, state: :sending_gcode}
+    new_state = %{state | caller: from, command_in_progress: true, status: status}
+    {:noreply, new_state}
   end
 
   def handle_call({:unload_filament}, _from, state) do
@@ -62,8 +86,8 @@ defmodule Moddity.Driver do
     end
   end
 
-  def handle_info({sender, response}, state) do
-    GenServer.reply(state.from, response)
-    {:noreply, Map.delete(state, :from)}
+  def handle_info({_sender, response}, state) do
+    GenServer.reply(state.caller, response)
+    {:noreply, %{state | caller: nil}}
   end
 end
