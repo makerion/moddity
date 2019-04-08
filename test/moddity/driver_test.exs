@@ -27,14 +27,14 @@ defmodule Moddity.DriverTest do
     allow(Mock, self(), pid)
 
     assert {:ok, idle_status()} == Driver.get_status(pid: pid)
-    :timer.sleep(200)
+    :timer.sleep(50)
     assert {:ok, idle_status()} == Driver.get_status(pid: pid)
   end
 
   test "when send_gcode is being sent, the printer is not idle", %{pid: pid} do
     Mock
     |> expect(:send_gcode, fn _file ->
-      :timer.sleep(1000)
+      :timer.sleep(30)
       :ok
     end)
     |> allow(self(), pid)
