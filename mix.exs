@@ -4,10 +4,24 @@ defmodule Moddity.MixProject do
   def project do
     [
       app: :moddity,
-      version: "0.1.0",
+      dialyzer: [
+        plt_add_deps: :transitive,
+        plt_add_apps: ~w(ex_unit mix)a,
+        ignore_warnings: ".dialyzer-ignore"
+      ],
+      deps: deps(),
       elixir: "~> 1.8",
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        credo: :test,
+        dialyzer: :test
+      ],
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      test_coverage: [tool: ExCoveralls],
+      version: "0.1.0"
     ]
   end
 
@@ -21,9 +35,10 @@ defmodule Moddity.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:credo, "~> 1.0.0", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.0.0-rc.6", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.10", only: :test},
       {:jason, "~> 1.0"}
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]
   end
 end

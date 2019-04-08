@@ -1,0 +1,158 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/elixir:1.8.1
+        environment:
+          MIX_ENV: test
+
+    steps:
+      - checkout
+
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+
+      - run:
+          name: "ELIXIR_VERSION.lock"
+          command: echo "${ELIXIR_VERSION}" > ELIXIR_VERSION.lock
+      - run:
+          name: "OTP_VERSION.lock"
+          command: echo "${OTP_VERSION}" > OTP_VERSION.lock
+
+      - restore_cache:
+          keys:
+            - v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+            - v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+
+      - run: mix deps.get
+      - run: mix compile
+
+      - save_cache:
+          key: v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+          paths:
+            - deps
+            - _build
+      - save_cache:
+          key: v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+          paths:
+            - deps
+            - _build
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .circleci
+            - .credo.exs
+            - .formatter.exs
+            - .git
+            - .gitignore
+            - ELIXIR_VERSION.lock
+            - OTP_VERSION.lock
+            - _build
+            - bin
+            - config
+            - deps
+            - doc
+            - lib
+            - mix.exs
+            - mix.lock
+            - rel
+            - test
+
+  credo:
+    docker:
+      - image: circleci/elixir:1.8.1
+        environment:
+          MIX_ENV: test
+
+    steps:
+      - attach_workspace:
+          at: .
+
+      - run: mix local.hex --force
+      - run: mix credo --strict
+
+  dialyzer:
+    docker:
+      - image: circleci/elixir:1.8.1
+        environment:
+          MIX_ENV: test
+
+    steps:
+      - attach_workspace:
+          at: .
+
+      - run: mix local.hex --force
+
+      - restore_cache:
+          keys:
+            - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+            - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+
+      - run:
+          name: Unpack PLT cache
+          command: |
+            mkdir -p _build/test
+            cp plts/dialyxir*.plt _build/test/ || true
+            mkdir -p ~/.mix
+            cp plts/dialyxir*.plt ~/.mix/ || true
+      - run: mix dialyzer --plt
+
+      - run:
+          name: Pack PLT cache
+          command: |
+            mkdir -p plts
+            cp _build/test/dialyxir*.plt plts/
+            cp ~/.mix/dialyxir*.plt plts/
+      - save_cache:
+          key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+          paths:
+            - plts
+      - save_cache:
+          key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+          paths:
+            - plts
+
+      - run: mix dialyzer --halt-exit-status
+
+  test:
+    docker:
+      - image: circleci/elixir:1.8.1
+        environment:
+          MIX_ENV: test
+
+    steps:
+      - attach_workspace:
+          at: .
+
+      - run: mix local.hex --force
+      - run: mix local.rebar --force
+
+      - run:
+          name: mix test
+          command: |
+            if [[ -z "$COVERALLS_REPO_TOKEN" ]]; then
+              mix coveralls.html
+            else
+              mix coveralls.circle ||
+                (retval=$? && curl -k https://coveralls.io/webhook?repo_token=$COVERALLS_REPO_TOKEN -d "payload[build_num]=$CIRCLE_WORKFLOW_WORKSPACE_ID&payload[status]=done" && return $retval)
+            fi
+      - store_artifacts:
+          path: cover/excoveralls.html
+      - store_test_results:
+          path: _build/test/junit
+
+workflows:
+  version: 2
+  primary:
+    jobs:
+      - build
+      - credo:
+          requires:
+            - build
+      - dialyzer:
+          requires:
+            - build
+      - test:
+          requires:
+            - build
