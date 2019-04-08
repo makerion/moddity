@@ -1,4 +1,13 @@
 defmodule Moddity.Backend.PythonShell do
+  @moduledoc """
+  This module is a shim to the python scripts that communicate with the printer.
+  """
+
+  alias Moddity.Backend
+
+  @behaviour Backend
+
+  @impl Backend
   def get_status do
     modt_status = Path.join([priv_dir(), "mod-t-scripts", "modt_status.py"])
 
@@ -20,6 +29,7 @@ defmodule Moddity.Backend.PythonShell do
     end
   end
 
+  @impl Backend
   def load_filament do
     load_filament_script = Path.join([priv_dir(), "mod-t-scripts", "load_filament.py"])
 
@@ -30,6 +40,7 @@ defmodule Moddity.Backend.PythonShell do
     end
   end
 
+  @impl Backend
   def send_gcode(file) do
     send_gcode = Path.join([priv_dir(), "mod-t-scripts", "send_gcode.py"])
 
@@ -41,11 +52,11 @@ defmodule Moddity.Backend.PythonShell do
     end
   end
 
+  @impl Backend
   def unload_filament do
     unload_filament_script = Path.join([priv_dir(), "mod-t-scripts", "unload_filament.py"])
 
     with {response, 0} <- System.cmd("python3", [unload_filament_script]) do
-      IO.inspect(response)
       :ok
     else
       error -> {:error, error}

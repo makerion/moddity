@@ -1,4 +1,12 @@
 defmodule Moddity.Driver do
+  @moduledoc """
+  This module is the entrypoint for communication with a MOD-t printer.
+
+  It maintains communication state and manages some primitive caching and
+  handles returning last known state when another process is sending a command
+  to the printer.
+  """
+
   use GenServer
 
   @timeout 60_000

@@ -1,4 +1,11 @@
 defmodule Moddity.FakeDriver do
+  @moduledoc """
+  This module exists as a fake stand-in for the real driver module.
+
+  It attempts to mimic real printer states based on observation while developing
+  the real driver.
+  """
+
   use GenServer
 
   import Process, only: [{:send_after, 3}]

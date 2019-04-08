@@ -1,4 +1,9 @@
 defmodule Moddity.PrinterStatus do
+  @moduledoc """
+  PrinterStatus is a struct to represent the printer's status to clients. It is
+  a sanitized version of the raw json that the printer returns.
+  """
+
   defstruct [
     :error,
     :job_progress,
