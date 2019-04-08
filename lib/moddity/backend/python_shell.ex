@@ -16,13 +16,13 @@ defmodule Moddity.Backend.PythonShell do
       {:ok, parsed_response}
     else
       {error, 1} ->
-        {:error, error}
-
-      {:error, error} ->
         case Regex.match?(~r/Device not found/, error) do
-          true -> {:error, "Device not found"}
-          false -> {:error, "Unknown Error"}
+          true -> {:error, "Device Not Found"}
+          false -> {:error, error}
         end
+
+      {:error, error = %Jason.DecodeError{}} ->
+        {:error, "Problem parsing printer response: #{inspect(error)}"}
 
       error ->
         {:error, error}

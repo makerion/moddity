@@ -10,7 +10,7 @@ defmodule Moddity.Driver do
   use GenServer
 
   @timeout 60_000
-  @default_backend Moddity.PythonShellBackend
+  @default_backend Moddity.Backend.PythonShell
 
   defstruct []
 
