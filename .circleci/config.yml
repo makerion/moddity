@@ -43,6 +43,7 @@ jobs:
           paths:
             - .circleci
             - .credo.exs
+            - .dialyzer-ignore
             - .formatter.exs
             - .git
             - .gitignore

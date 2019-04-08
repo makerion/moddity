@@ -1,4 +1,11 @@
 defmodule Moddity.FakeDriver do
+  @moduledoc """
+  This module exists as a fake stand-in for the real driver module.
+
+  It attempts to mimic real printer states based on observation while developing
+  the real driver.
+  """
+
   use GenServer
 
   import Process, only: [{:send_after, 3}]
@@ -140,7 +147,7 @@ defmodule Moddity.FakeDriver do
     |> put_in(["status", "extruder_target_temperature"], 200.0)
     |> put_in(["status", "extruder_temperature"], 105.7)
     |> put_in(["status", "state"], "STATE_JOB_QUEUED")
-    |> put_in(["job", "file_size"], 1540647)
+    |> put_in(["job", "file_size"], 1_540_647)
   end
 
   defp state_building do
@@ -150,7 +157,7 @@ defmodule Moddity.FakeDriver do
     |> put_in(["status", "state"], "STATE_BUILDING")
     |> put_in(["job", "current_gcode_number"], 4841)
     |> put_in(["job", "current_line_number"], 4841)
-    |> put_in(["job", "file_size"], 1540647)
+    |> put_in(["job", "file_size"], 1_540_647)
     |> put_in(["job", "progress"], 9)
     |> put_in(["job", "time-elapsed"], 219)
   end
@@ -162,7 +169,7 @@ defmodule Moddity.FakeDriver do
     |> put_in(["status", "state"], "STATE_EXEC_PAUSE_CMD")
     |> put_in(["job", "current_gcode_number"], 5763)
     |> put_in(["job", "current_line_number"], 5763)
-    |> put_in(["job", "file_size"], 1540647)
+    |> put_in(["job", "file_size"], 1_540_647)
     |> put_in(["job", "progress"], 10)
     |> put_in(["job", "time-elapsed"], 290)
   end
