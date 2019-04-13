@@ -11,6 +11,7 @@ defmodule Moddity.MixProject do
       ],
       deps: deps(),
       elixir: "~> 1.8",
+      elixirc_options: [warnings_as_errors: true],
       preferred_cli_env: [
         coveralls: :test,
         "coveralls.detail": :test,
