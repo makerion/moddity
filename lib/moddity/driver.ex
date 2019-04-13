@@ -29,7 +29,7 @@ defmodule Moddity.Driver do
        backend: backend,
        caller: nil,
        command_in_progress: false,
-       last_status_fetch: 0,
+       last_status_fetch: nil,
        status: nil
      }}
   end
@@ -58,14 +58,15 @@ defmodule Moddity.Driver do
     {:reply, {:ok, state.status}, state}
   end
 
-  def handle_call({:get_status, now}, _from, state = %{last_status_fetch: fetched}) when now > fetched + 1000 do
+  def handle_call({:get_status, now}, _from, state = %{last_status_fetch: fetched})
+  when ((not is_nil(fetched)) and now < fetched + 1000) do
     {:reply, {:ok, state.status}, state}
   end
 
   def handle_call({:get_status, _}, _from, state) do
     case state.backend.get_status() do
       {:ok, status} ->
-        timestamp = System.monotonic_time()
+        timestamp = System.monotonic_time(:millisecond)
         {:reply, {:ok, status}, %{state | status: status, last_status_fetch: timestamp}}
 
       {:error, error} ->

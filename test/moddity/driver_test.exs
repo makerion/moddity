@@ -16,19 +16,24 @@ defmodule Moddity.DriverTest do
   end
 
   test "get_status returns the status from the printer", %{pid: pid} do
-    expect(Mock, :get_status, fn -> {:ok, idle_status()} end)
-    allow(Mock, self(), pid)
+    Mock
+    |> expect(:get_status, fn -> {:ok, idle_status()} end)
+    |> allow(self(), pid)
 
     assert {:ok, idle_status()} == Driver.get_status(pid: pid)
   end
 
   test "get_status caches printer status for one second", %{pid: pid} do
-    expect(Mock, :get_status, fn -> {:ok, idle_status()} end)
-    allow(Mock, self(), pid)
+    Mock
+    |> expect(:get_status, fn -> {:ok, idle_status()} end)
+    |> expect(:get_status, fn -> {:ok, %PrinterStatus{idle?: false}} end)
+    |> allow(self(), pid)
 
     assert {:ok, idle_status()} == Driver.get_status(pid: pid)
     :timer.sleep(50)
     assert {:ok, idle_status()} == Driver.get_status(pid: pid)
+    :timer.sleep(1000)
+    assert {:ok, %PrinterStatus{idle?: false}} == Driver.get_status(pid: pid)
   end
 
   test "when send_gcode is being sent, the printer is not idle", %{pid: pid} do

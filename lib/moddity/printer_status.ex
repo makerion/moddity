@@ -6,15 +6,15 @@ defmodule Moddity.PrinterStatus do
 
   defstruct [
     :error,
+    :extruder_actual_temperature,
+    :extruder_target_temperature,
+    :filament,
+    :idle?,
     :job_progress,
     :job_time_elapsed,
-    :extruder_target_temperature,
-    :extruder_actual_temperature,
-    :filament,
     :state,
     :state_friendly,
-    :state_raw,
-    :idle?
+    :state_raw
   ]
 
   def from_raw(raw) do
@@ -22,14 +22,14 @@ defmodule Moddity.PrinterStatus do
     state = translate_state(state_raw)
 
     %__MODULE__{
+      error: raw["error"],
+      extruder_actual_temperature: get_in(raw, ["status", "extruder_temperature"]),
+      extruder_target_temperature: get_in(raw, ["status", "extruder_target_temperature"]),
+      idle?: state == :idle,
+      job_progress: get_in(raw, ["job", "progress"]),
       state: state,
       state_friendly: to_human(state_raw),
-      state_raw: get_in(raw, ["status", "state"]),
-      idle?: state == :idle,
-      error: raw["error"],
-      job_progress: get_in(raw, ["job", "progress"]),
-      extruder_target_temperature: get_in(raw, ["status", "extruder_target_temperature"]),
-      extruder_actual_temperature: get_in(raw, ["status", "extruder_temperature"])
+      state_raw: get_in(raw, ["status", "state"])
     }
   end
 
