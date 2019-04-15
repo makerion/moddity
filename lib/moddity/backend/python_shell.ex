@@ -3,7 +3,7 @@ defmodule Moddity.Backend.PythonShell do
   This module is a shim to the python scripts that communicate with the printer.
   """
 
-  alias Moddity.Backend
+  alias Moddity.{Backend, PrinterStatus}
 
   @behaviour Backend
 
@@ -12,8 +12,9 @@ defmodule Moddity.Backend.PythonShell do
     modt_status = Path.join([priv_dir(), "mod-t-scripts", "modt_status.py"])
 
     with {response, 0} <- System.cmd("python3", [modt_status]),
-         {:ok, parsed_response} <- Jason.decode(response) do
-      {:ok, parsed_response}
+         {:ok, parsed_response} <- Jason.decode(response),
+         printer_status <- PrinterStatus.from_raw(parsed_response) do
+      {:ok, printer_status}
     else
       {error, 1} ->
         case Regex.match?(~r/Device not found/, error) do

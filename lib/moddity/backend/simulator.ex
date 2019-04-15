@@ -1,14 +1,18 @@
-defmodule Moddity.FakeDriver do
+defmodule Moddity.Backend.Simulator do
   @moduledoc """
   This module exists as a fake stand-in for the real driver module.
 
-  It attempts to mimic real printer states based on observation while developing
-  the real driver.
+  It attempts to mimic real printer states based on observation while developing the real driver. It's intended for use
+  when the real printer isn't available but realistic behavior is needed for downstream testing.
   """
 
   use GenServer
 
   import Process, only: [{:send_after, 3}]
+
+  alias Moddity.{Backend, PrinterStatus}
+
+  @behaviour Backend
 
   defstruct []
 
@@ -67,7 +71,7 @@ defmodule Moddity.FakeDriver do
   end
 
   def handle_call({:get_status}, _from, state) do
-    {:reply, {:ok, state}, state}
+    {:reply, {:ok, PrinterStatus.from_raw(state)}, state}
   end
 
   def handle_call({:load_filament}, _from, state) do
