@@ -12,7 +12,7 @@ defmodule Moddity.DriverTest do
 
   describe "with mock backend" do
     setup do
-      {:ok, mock_pid} = start_supervised({Driver, backend: Mock})
+      {:ok, mock_pid} = start_supervised({Driver, backend: Mock, poll: false})
       {:ok, mock_pid: mock_pid}
     end
 
@@ -55,12 +55,31 @@ defmodule Moddity.DriverTest do
   describe "with simulator backend" do
     setup do
       {:ok, _} = start_supervised({Simulator, []})
-      {:ok, simulator_pid} = start_supervised({Driver, backend: Simulator})
+      {:ok, simulator_pid} = start_supervised({Driver, backend: Simulator, poll: false})
       {:ok, simulator_pid: simulator_pid}
     end
 
     test "using the simulated driver works", %{simulator_pid: simulator_pid} do
       assert {:ok, %PrinterStatus{}} = Driver.get_status(pid: simulator_pid)
+    end
+  end
+
+  describe "with polling" do
+    setup do
+      {:ok, mock_pid} = start_supervised({Driver, backend: Mock})
+      {:ok, mock_pid: mock_pid}
+    end
+
+    test "it polls every second", %{mock_pid: mock_pid} do
+      Driver.subscribe()
+
+      Mock
+      |> expect(:get_status, fn -> {:ok, idle_status()} end)
+      |> expect(:get_status, fn -> {:ok, %PrinterStatus{idle?: false}} end)
+      |> allow(self(), mock_pid)
+
+      assert_receive({:printer_status_event, _}, 2000)
+      assert_receive({:printer_status_event, _}, 2000)
     end
   end
 

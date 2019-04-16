@@ -23,6 +23,9 @@ defmodule Moddity.Driver do
 
   def init(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
+    if Keyword.get(opts, :poll, true) do
+      Process.send_after(self(), :get_status, 100)
+    end
 
     {:ok,
      %{
@@ -32,6 +35,10 @@ defmodule Moddity.Driver do
        last_status_fetch: nil,
        status: nil
      }}
+  end
+
+  def subscribe do
+    Registry.register(Registry.PrinterStatusEvents, :printer_status_event, [])
   end
 
   def get_status(opts \\ []) do
@@ -64,14 +71,7 @@ defmodule Moddity.Driver do
   end
 
   def handle_call({:get_status, _}, _from, state) do
-    case state.backend.get_status() do
-      {:ok, status} ->
-        timestamp = System.monotonic_time(:millisecond)
-        {:reply, {:ok, status}, %{state | status: status, last_status_fetch: timestamp}}
-
-      {:error, error} ->
-        {:reply, {:error, error}, state}
-    end
+    Tuple.insert_at(_get_status(state), 0, :reply)
   end
 
   def handle_call({:load_filament}, _from, state) do
@@ -98,5 +98,39 @@ defmodule Moddity.Driver do
   def handle_info({_sender, response}, state) do
     GenServer.reply(state.caller, response)
     {:noreply, %{state | caller: nil}}
+  end
+
+  def handle_info(:get_status, state) do
+    response =
+      case _get_status(state) do
+        {{:ok, status}, new_state} ->
+          send_data(status)
+          {:noreply, new_state}
+        {_, state} ->
+          {:noreply, state}
+      end
+
+    Process.send_after(self(), :get_status, 1000)
+
+    response
+  end
+
+  defp _get_status(state) do
+    case state.backend.get_status() do
+      {:ok, status} ->
+        timestamp = System.monotonic_time(:millisecond)
+        {{:ok, status}, %{state | status: status, last_status_fetch: timestamp}}
+
+      {:error, error} ->
+        {{:error, error}, state}
+    end
+  end
+
+  defp send_data(event_data) do
+    Registry.dispatch(Registry.PrinterStatusEvents, :printer_status_event, fn entries ->
+      for {pid, _registered_val} <- entries do
+        send(pid, {:printer_status_event, event_data})
+      end
+    end)
   end
 end
