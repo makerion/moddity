@@ -25,7 +25,7 @@ defmodule Moddity.PrinterStatus do
       error: raw["error"],
       extruder_actual_temperature: get_in(raw, ["status", "extruder_temperature"]),
       extruder_target_temperature: get_in(raw, ["status", "extruder_target_temperature"]),
-      idle?: state == :idle,
+      idle?: Enum.member?([:idle, :mech_ready], state),
       job_progress: get_in(raw, ["job", "progress"]),
       state: state,
       state_friendly: to_human(state_raw),

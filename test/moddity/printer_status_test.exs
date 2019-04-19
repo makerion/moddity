@@ -66,7 +66,7 @@ defmodule PrinterStatusTest do
     assert %PrinterStatus{
       state: :mech_ready,
       state_friendly: "Mech Ready",
-      idle?: false,
+      idle?: true,
       error: 0} = PrinterStatus.from_raw(raw)
   end
 
