@@ -9,6 +9,8 @@ defmodule Moddity.Driver do
 
   use GenServer
 
+  require Logger
+
   @timeout 60_000
   @default_backend Moddity.Backend.PythonShell
 
@@ -95,8 +97,9 @@ defmodule Moddity.Driver do
     end
   end
 
-  def handle_info({_sender, response}, state) do
-    GenServer.reply(state.caller, response)
+  def handle_info(pid, response, state) do
+    Logger.warn response
+    GenServer.reply(state.caller, state.status)
     {:noreply, %{state | caller: nil}}
   end
 

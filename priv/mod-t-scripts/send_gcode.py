@@ -14,7 +14,7 @@ from zlib import adler32
 # Adler32 checksum function
 # Based on https://gist.github.com/kofemann/2303046
 # For some reason, mod-t uses 0, not 1 as the basis of the adler32 sum
-BLOCKSIZE=256*1024*1024
+BLOCKSIZE=64*1024*1024
 
 def adler32_checksum(fname):
  asum = 0
