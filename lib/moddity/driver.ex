@@ -35,7 +35,8 @@ defmodule Moddity.Driver do
        caller: nil,
        command_in_progress: false,
        last_status_fetch: nil,
-       status: nil
+       status: nil,
+       task: nil
      }}
   end
 
@@ -63,10 +64,6 @@ defmodule Moddity.Driver do
     GenServer.call(pid, {:unload_filament}, @timeout)
   end
 
-  def handle_call({:get_status, _}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:ok, state.status}, state}
-  end
-
   def handle_call({:get_status, now}, _from, state = %{last_status_fetch: fetched})
   when ((not is_nil(fetched)) and now < fetched + 1000) do
     {:reply, {:ok, state.status}, state}
@@ -76,33 +73,86 @@ defmodule Moddity.Driver do
     Tuple.insert_at(_get_status(state), 0, :reply)
   end
 
-  def handle_call({:load_filament}, _from, state) do
-    case state.backend.load_filament do
-      :ok -> {:reply, :ok, state}
-      {:error, error} -> {:reply, {:error, error}, state}
-    end
+  def handle_call({:load_filament}, _from, state = %{command_in_progress: true}) do
+    {:reply, {:error, state.status}, state}
   end
 
-  def handle_call({:send_gcode, file}, from, state) do
-    Task.async(fn -> state.backend.send_gcode(file) end)
-    status = %PrinterStatus{idle?: false, state: :sending_gcode}
-    new_state = %{state | caller: from, command_in_progress: true, status: status}
+  def handle_call({:load_filament}, from, state) do
+    task = Task.async(fn ->
+      :timer.sleep(1000)
+      state.backend.load_filament()
+    end)
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :sending_load_filament,
+        state_friendly: "Sending Load Filament",
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
     {:noreply, new_state}
   end
 
-  def handle_call({:unload_filament}, _from, state) do
-    case state.backend.unload_filament do
-      :ok -> {:reply, :ok, state}
-      {:error, error} -> {:reply, {:error, error}, state}
-    end
+  def handle_call({:send_gcode, _}, _from, state = %{command_in_progress: true}) do
+    {:reply, {:error, state.status}, state}
   end
 
-  def handle_info(_pid, response, state) do
+  def handle_call({:send_gcode, file}, from, state) do
+    task = Task.async(fn ->
+      :timer.sleep(1000)
+      state.backend.send_gcode(file)
+    end)
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :sending_gcode,
+        state_friendly: "Sending gcode",
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
+    {:noreply, new_state}
+  end
+
+  def handle_call({:unload_filament}, _from, state = %{command_in_progress: true}) do
+    {:reply, {:error, state.status}, state}
+  end
+
+  def handle_call({:unload_filament}, from, state) do
+    task = Task.async(fn ->
+      :timer.sleep(1000)
+      state.backend.unload_filament()
+    end)
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :sending_unload_filament,
+        state_friendly: "Sending Unload Filament",
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
+    {:noreply, new_state}
+  end
+
+  # send gcode
+  def handle_info(task_pid, response, state = %{task: %Task{ref: task_pid}}) do
     Logger.warn response
-    GenServer.reply(state.caller, state.status)
-    {:noreply, %{state | caller: nil}}
+    GenServer.reply(state.caller, :ok)
+    {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end
 
+  # load/unload filament
+  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
+    GenServer.reply(state.caller, :ok)
+    {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
+  end
+
+  # task crashed
+   def handle_info({:DOWN, _ref, :process, _pid, :normal}, state) do
+     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
+   end
   def handle_info(:get_status, state) do
     response =
       case _get_status(state) do
@@ -116,6 +166,11 @@ defmodule Moddity.Driver do
     Process.send_after(self(), :get_status, 1000)
 
     response
+  end
+
+  defp _get_status(state = %{command_in_progress: true, status: status}) do
+    timestamp = System.monotonic_time(:millisecond)
+    {{:ok, status}, %{state | status: status, last_status_fetch: timestamp}}
   end
 
   defp _get_status(state) do
