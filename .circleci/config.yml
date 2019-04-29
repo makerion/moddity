@@ -24,6 +24,7 @@ jobs:
             - v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
             - v1-mix-compile-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
 
+      - run: sudo apt update && sudo apt install -y libusb-1.0.0-dev
       - run: mix deps.get
       - run: mix compile
 
