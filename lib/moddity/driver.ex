@@ -12,7 +12,7 @@ defmodule Moddity.Driver do
   require Logger
 
   @timeout 60_000
-  @default_backend Moddity.Backend.PythonShell
+  @default_backend Moddity.Backend.Libusb
 
   defstruct []
 
