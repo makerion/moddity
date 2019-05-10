@@ -59,19 +59,32 @@ defmodule Moddity.Backend.Libusb.SendGCode do
     end
   end
 
-  def transfer_file_push(_handle, size, checksum) do
+  def transfer_file_push(handle, size, checksum) do
     header = ~s({"metadata":{"version":1,"type":"file_push"},"file_push":{"size":#{size},"adler32":#{checksum},"job_id":""}})
     Logger.debug "Sending file push header: #{inspect header}"
-    :ok
-    # case LibUsb.bulk_send(handle, 0x04, header) do
-    #   {:ok, 0} ->
-    #     LibUsb.read_raw_status_bytes(handle, 0x81, <<>>)
-    # end
+    case LibUsb.bulk_send(handle, 0x04, header, 500) do
+      {:ok, 0} -> :ok
+    end
   end
 
-  # def send_gcode_chunk(handle, something) do
+  @chunk_size 5120
+  @gcode_timeout 1000
 
-  # end
+  def transfer_file(_handle, <<>>), do: :ok
+
+  def transfer_file(handle, data) when byte_size(data) < @chunk_size do
+    case LibUsb.bulk_send(handle, 0x04, data, @gcode_timeout) do
+      {:ok, 0} -> :ok
+      error -> error
+    end
+  end
+
+  def transfer_file(handle, <<data::binary-size(@chunk_size), rest::binary>>) do
+    case LibUsb.bulk_send(handle, 0x04, data, @gcode_timeout) do
+      {:ok, 0} -> transfer_file(handle, rest)
+      error -> error
+    end
+  end
 
   defp read_raw_status_bytes(handle, address, acc) do
     with {:ok, data} <- LibUsb.bulk_receive(handle, address, 64, 500) do
