@@ -10,6 +10,7 @@ defmodule Moddity.Backend.Libusb do
   import Process, only: [{:send_after, 3}]
 
   alias Moddity.{Backend, PrinterStatus}
+  alias Moddity.Backend.Libusb.SendGCode
 
   @behaviour Backend
 
@@ -38,7 +39,8 @@ defmodule Moddity.Backend.Libusb do
   end
 
   @impl Backend
-  def send_gcode(_file) do
+  def send_gcode(file) do
+    GenServer.call(__MODULE__, {:send_gcode, file})
   end
 
   @impl Backend
@@ -57,6 +59,24 @@ defmodule Moddity.Backend.Libusb do
         send_after(self(), :connect_to_printer, 2000)
         {:reply, {:error, :no_device}, %{state | handle: nil}}
       error ->
+        Logger.error("error getting status: #{inspect error}")
+        {:error, error}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:send_gcode, file}, _caller, state = %State{handle: handle}) do
+    with true <- File.exists?(file),
+         {:ok, %File.Stat{size: size}} <- File.stat(file),
+         {:ok, checksum} <- Adler32Checksum.compute(file),
+         {:ok, _first_preamble} <- SendGCode.transfer_first_preamble(handle),
+         {:ok, _second_preamble} <- SendGCode.transfer_second_preamble(handle),
+         {:ok, _third_preamble} <- SendGCode.transfer_third_preamble(handle),
+         :ok <- SendGCode.transfer_file_push(handle, size, checksum) do
+
+      {:reply, :ok, state}
+    else
+      {:error, error} ->
         Logger.error("error getting status: #{inspect error}")
         {:error, error}
     end
