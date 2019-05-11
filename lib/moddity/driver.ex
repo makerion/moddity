@@ -144,8 +144,8 @@ defmodule Moddity.Driver do
   end
 
   # load/unload filament
-  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
-    GenServer.reply(state.caller, :ok)
+  def handle_info({task_pid, {:ok, response}}, state = %{task: %Task{ref: task_pid}}) do
+    GenServer.reply(state.caller, {:ok, response})
     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end
 

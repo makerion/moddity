@@ -1,7 +1,9 @@
-defmodule Moddity.Backend.Libusb.SendGCode do
+defmodule Moddity.Backend.Libusb.GCode do
   @moduledoc """
   Handles the transfer complexities of sending a gcode file to the printer
   """
+
+  import Moddity.Backend.Libusb.Util, only: [{:read_raw_status_bytes, 2}]
 
   require Logger
 
@@ -11,7 +13,7 @@ defmodule Moddity.Backend.Libusb.SendGCode do
   def transfer_first_preamble(handle) do
     Logger.debug "Sending Sequence 1, #{inspect @sequence1}"
     with {:ok, 0} <- LibUsb.bulk_send(handle, 0x02, @sequence1, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81, <<>>),
+         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
          {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
 
         Logger.debug "Received: #{inspect head} #{inspect message}"
@@ -29,7 +31,7 @@ defmodule Moddity.Backend.Libusb.SendGCode do
   def transfer_second_preamble(handle) do
     Logger.debug "Sending Sequence 2: #{inspect @sequence2}"
     with {:ok, 0} <- LibUsb.bulk_send(handle, 0x02, @sequence2, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81, <<>>),
+         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
          {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
 
       Logger.debug "Received: #{inspect head} #{inspect message}"
@@ -47,7 +49,7 @@ defmodule Moddity.Backend.Libusb.SendGCode do
   def transfer_third_preamble(handle) do
     Logger.debug "Sending Sequence 3: #{inspect @sequence3}"
     with LibUsb.bulk_send(handle, 0x02, @sequence3, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81, <<>>),
+         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
          {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
 
       Logger.debug "Received: #{inspect head} #{inspect rest}"
@@ -83,17 +85,6 @@ defmodule Moddity.Backend.Libusb.SendGCode do
     case LibUsb.bulk_send(handle, 0x04, data, @gcode_timeout) do
       {:ok, 0} -> transfer_file(handle, rest)
       error -> error
-    end
-  end
-
-  defp read_raw_status_bytes(handle, address, acc) do
-    with {:ok, data} <- LibUsb.bulk_receive(handle, address, 64, 500) do
-      read_raw_status_bytes(handle, address, acc <> data)
-    else
-      {:error, :LIBUSB_ERROR_TIMEOUT} ->
-        {:ok, acc}
-      error ->
-        error
     end
   end
 end

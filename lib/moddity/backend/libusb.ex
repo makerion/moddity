@@ -10,7 +10,7 @@ defmodule Moddity.Backend.Libusb do
   import Process, only: [{:send_after, 3}]
 
   alias Moddity.{Backend, PrinterStatus}
-  alias Moddity.Backend.Libusb.SendGCode
+  alias Moddity.Backend.Libusb.{Filament, GCode, Status}
 
   @behaviour Backend
 
@@ -25,9 +25,20 @@ defmodule Moddity.Backend.Libusb do
 
   @impl GenServer
   def init(_) do
+    Process.flag(:trap_exit, true) # Need to release usb handle
     send_after(self(), :connect_to_printer, 2000)
     {:ok, %State{}}
   end
+
+  @impl GenServer
+  def terminate(_reason, %State{handle: nil}), do: :ok
+  def terminate(_reason, %State{handle: handle}), do: LibUsb.release_handle(handle)
+
+  def crash() do
+    GenServer.call(__MODULE__, {:crash})
+  end
+
+  def handle_info({:crash}, _sender, _state), do: :ohno
 
   @impl Backend
   def get_status do
@@ -36,6 +47,7 @@ defmodule Moddity.Backend.Libusb do
 
   @impl Backend
   def load_filament do
+    GenServer.call(__MODULE__, {:load_filament})
   end
 
   @impl Backend
@@ -45,22 +57,36 @@ defmodule Moddity.Backend.Libusb do
 
   @impl Backend
   def unload_filament do
+    GenServer.call(__MODULE__, {:unload_filament})
   end
+
+  @doc """
+  Catchall to handle when the printer isn't present
+  """
+  @impl GenServer
+  def handle_call(_, _, state = %State{handle: nil}), do: {:reply, {:error, :no_device}, state}
 
   @impl GenServer
   def handle_call({:get_status}, _caller, state = %State{handle: handle}) do
-    with {:ok, _clear_buffer} <- read_raw_status_bytes(handle, <<>>),
-         {:ok, 0} <- LibUsb.bulk_send(handle, 4, "{\"metadata\":{\"version\":1,\"type\":\"status\"}}", 500),
-         {:ok, modt_status} <- read_status(handle) do
-
-      {:reply, {:ok, PrinterStatus.from_raw(modt_status)}, state}
-    else
-      {:error, :LIBUSB_ERROR_NO_DEVICE} ->
-        send_after(self(), :connect_to_printer, 2000)
-        {:reply, {:error, :no_device}, %{state | handle: nil}}
+    case Status.transfer_get_status(handle) do
+      {:ok, modt_status} ->
+        {:reply, {:ok, PrinterStatus.from_raw(modt_status)}, state}
       error ->
         Logger.error("error getting status: #{inspect error}")
-        {:error, error}
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:load_filament}, _caller, state = %State{handle: handle}) do
+    case Filament.transfer_load_filament(handle) do
+      {:ok, response} ->
+        {:reply, {:ok, response}, state}
+      error ->
+        Logger.error("Error while trying to send load filament: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
     end
   end
 
@@ -69,18 +95,31 @@ defmodule Moddity.Backend.Libusb do
     with true <- File.exists?(file),
          {:ok, %File.Stat{size: size}} <- File.stat(file),
          {:ok, checksum} <- Adler32Checksum.compute(file),
-         {:ok, _first_preamble} <- SendGCode.transfer_first_preamble(handle),
-         {:ok, _second_preamble} <- SendGCode.transfer_second_preamble(handle),
-         {:ok, _third_preamble} <- SendGCode.transfer_third_preamble(handle),
-         :ok <- SendGCode.transfer_file_push(handle, size, checksum),
+         {:ok, _first_preamble} <- GCode.transfer_first_preamble(handle),
+         {:ok, _second_preamble} <- GCode.transfer_second_preamble(handle),
+         {:ok, _third_preamble} <- GCode.transfer_third_preamble(handle),
+         :ok <- GCode.transfer_file_push(handle, size, checksum),
          {:ok, gcode} <- File.read(file),
-         :ok <- SendGCode.transfer_file(handle, gcode) do
+         :ok <- GCode.transfer_file(handle, gcode) do
 
       {:reply, :ok, state}
     else
       {:error, error} ->
         Logger.error("error getting status: #{inspect error}")
-        {:error, error}
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:unload_filament}, _caller, state = %State{handle: handle}) do
+    case Filament.transfer_unload_filament(handle) do
+      {:ok, response} ->
+        {:reply, {:ok, response}, state}
+      error ->
+        Logger.error("Error while trying to send unload filament: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
     end
   end
 
@@ -103,30 +142,17 @@ defmodule Moddity.Backend.Libusb do
     end
   end
 
-  defp read_status(handle, error_count \\ 0)
-  defp read_status(_handle, 5), do: {:error, :max_retries}
-  defp read_status(handle, error_count) do
-    with {:ok, data} <- read_raw_status_bytes(handle, <<>>),
-         {:ok, parsed} <- Jason.decode(data) do
-      {:ok, parsed}
-    else
-      {:error, %Jason.DecodeError{} = error} ->
-        Logger.error("Error reading status: #{inspect error}")
-        read_status(handle, error_count + 1)
-      error ->
-        Logger.error("Error reading status: #{inspect error}")
-        error
-    end
+  defp process_error(error = {:error, reason}, state = %State{handle: handle})
+  when reason in [:LIBUSB_ERROR_NO_DEVICE, :LIBUSB_ERROR_PIPE, :LIBUSB_ERROR_IO] do
+
+    LibUsb.release_handle(handle)
+    send_after(self(), :connect_to_printer, 2000)
+    {error, %{state | handle: nil}}
   end
 
-  defp read_raw_status_bytes(handle, acc) do
-    with {:ok, data} <- LibUsb.bulk_receive(handle, 0x83, 64, 500) do
-      read_raw_status_bytes(handle, acc <> data)
-    else
-      {:error, :LIBUSB_ERROR_TIMEOUT} ->
-        {:ok, acc}
-      error ->
-        error
-    end
+  defp process_error(error, state = %State{handle: handle}) do
+    LibUsb.release_handle(handle)
+    send_after(self(), :connect_to_printer, 2000)
+    {error, %{state | handle: nil}}
   end
 end
