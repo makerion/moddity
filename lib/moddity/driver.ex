@@ -12,7 +12,7 @@ defmodule Moddity.Driver do
   require Logger
 
   @timeout 60_000
-  @default_backend Moddity.Backend.PythonShell
+  @default_backend Moddity.Backend.Libusb
 
   defstruct []
 
@@ -136,16 +136,21 @@ defmodule Moddity.Driver do
     {:noreply, new_state}
   end
 
+  # send gcode failed
+  def handle_info({task_pid, {:error, status}}, state = %{task: %Task{ref: task_pid}}) do
+    GenServer.reply(state.caller, {:error, status})
+    {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
+  end
+
   # send gcode
-  def handle_info(task_pid, response, state = %{task: %Task{ref: task_pid}}) do
-    Logger.warn response
+  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
     GenServer.reply(state.caller, :ok)
     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end
 
   # load/unload filament
-  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
-    GenServer.reply(state.caller, :ok)
+  def handle_info({task_pid, {:ok, response}}, state = %{task: %Task{ref: task_pid}}) do
+    GenServer.reply(state.caller, {:ok, response})
     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end
 

@@ -35,7 +35,7 @@ defmodule Moddity.Backend.PythonShell do
     load_filament_script = Path.join([priv_dir(), "mod-t-scripts", "load_filament.py"])
 
     with {_response, 0} <- System.cmd("python3", [load_filament_script]) do
-      :ok
+      {:ok, "Load Filament Executed via Python"}
     else
       error -> {:error, error}
     end
@@ -47,7 +47,7 @@ defmodule Moddity.Backend.PythonShell do
 
     with {response, 0} <- System.cmd("python3", [send_gcode, file]),
          {:ok, _parsed_response} <- Jason.decode(response) do
-      :ok
+      {:ok, "Unload Filament Executed via Python"}
     else
       error -> {:error, error}
     end
