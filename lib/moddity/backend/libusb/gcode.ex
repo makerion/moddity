@@ -3,7 +3,7 @@ defmodule Moddity.Backend.Libusb.GCode do
   Handles the transfer complexities of sending a gcode file to the printer
   """
 
-  import Moddity.Backend.Libusb.Util, only: [{:read_raw_status_bytes, 2}]
+  import Moddity.Backend.Libusb.Util, only: [{:read_command_response_bytes, 2}]
 
   require Logger
 
@@ -13,10 +13,10 @@ defmodule Moddity.Backend.Libusb.GCode do
   def transfer_first_preamble(handle) do
     Logger.debug "Sending Sequence 1, #{inspect @sequence1}"
     with {:ok, 0} <- LibUsb.bulk_send(handle, 0x02, @sequence1, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
-         {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
+         {:ok, header, data} <- read_command_response_bytes(handle, 0x81),
+         {:ok, message} <- Jason.decode(data) do
 
-        Logger.debug "Received: #{inspect head} #{inspect message}"
+        Logger.debug "Received: #{inspect Base.encode16(header)} #{inspect message}"
         {:ok, message}
       else
         error ->
@@ -31,10 +31,10 @@ defmodule Moddity.Backend.Libusb.GCode do
   def transfer_second_preamble(handle) do
     Logger.debug "Sending Sequence 2: #{inspect @sequence2}"
     with {:ok, 0} <- LibUsb.bulk_send(handle, 0x02, @sequence2, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
-         {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
+         {:ok, header, data} <- read_command_response_bytes(handle, 0x81),
+         {:ok, message} <- Jason.decode(data) do
 
-      Logger.debug "Received: #{inspect head} #{inspect message}"
+      Logger.debug "Received: #{inspect Base.encode16(header)} #{inspect message}"
       {:ok, message}
     else
       error ->
@@ -49,10 +49,10 @@ defmodule Moddity.Backend.Libusb.GCode do
   def transfer_third_preamble(handle) do
     Logger.debug "Sending Sequence 3: #{inspect @sequence3}"
     with LibUsb.bulk_send(handle, 0x02, @sequence3, 500),
-         {:ok, <<head::size(40), rest::binary>>} <- read_raw_status_bytes(handle, 0x81),
-         {:ok, message} <- Jason.decode(String.trim_trailing(rest, ";")) do
+         {:ok, header, data} <- read_command_response_bytes(handle, 0x81),
+         {:ok, message} <- Jason.decode(data) do
 
-      Logger.debug "Received: #{inspect head} #{inspect rest}"
+      Logger.debug "Received: #{inspect Base.encode16(header)} #{inspect message}"
       {:ok, message}
     else
       error ->

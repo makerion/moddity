@@ -143,7 +143,7 @@ defmodule Moddity.Backend.Libusb do
   end
 
   defp process_error(error = {:error, reason}, state = %State{handle: handle})
-  when reason in [:LIBUSB_ERROR_NO_DEVICE, :LIBUSB_ERROR_PIPE, :LIBUSB_ERROR_IO] do
+  when reason in [:LIBUSB_ERROR_NO_DEVICE, :LIBUSB_ERROR_PIPE, :LIBUSB_ERROR_IO, :LIBUSB_ERROR_OTHER] do
 
     LibUsb.release_handle(handle)
     send_after(self(), :connect_to_printer, 2000)

@@ -137,8 +137,7 @@ defmodule Moddity.Driver do
   end
 
   # send gcode
-  def handle_info(task_pid, response, state = %{task: %Task{ref: task_pid}}) do
-    Logger.warn response
+  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
     GenServer.reply(state.caller, :ok)
     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end

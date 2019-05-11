@@ -3,8 +3,6 @@ defmodule Moddity.Backend.Libusb.Status do
   Handles reading printer status
   """
 
-  import Moddity.Backend.Libusb.Util, only: [{:read_raw_status_bytes, 2}]
-
   require Logger
 
   def transfer_get_status(handle) do
@@ -29,6 +27,17 @@ defmodule Moddity.Backend.Libusb.Status do
       error ->
         Logger.error("Error reading status: #{inspect error}")
       error
+    end
+  end
+
+  defp read_raw_status_bytes(handle, address, acc \\ <<>>) do
+    with {:ok, data} <- LibUsb.bulk_receive(handle, address, 64, 500) do
+      read_raw_status_bytes(handle, address, acc <> data)
+    else
+      {:error, :LIBUSB_ERROR_TIMEOUT} ->
+        {:ok, acc}
+      error ->
+        error
     end
   end
 end
