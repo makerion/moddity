@@ -34,12 +34,6 @@ defmodule Moddity.Backend.Libusb do
   def terminate(_reason, %State{handle: nil}), do: :ok
   def terminate(_reason, %State{handle: handle}), do: LibUsb.release_handle(handle)
 
-  def crash() do
-    GenServer.call(__MODULE__, {:crash})
-  end
-
-  def handle_info({:crash}, _sender, _state), do: :ohno
-
   @impl Backend
   def get_status do
     GenServer.call(__MODULE__, {:get_status})
@@ -104,10 +98,13 @@ defmodule Moddity.Backend.Libusb do
 
       {:reply, :ok, state}
     else
+      false ->
+        Logger.error("File does not exist: #{inspect file}")
+        {:reply, {:error, :file_does_not_exist}, state}
       {:error, error} ->
         Logger.error("error getting status: #{inspect error}")
         {error, new_state} = process_error(error, state)
-        {:reply, error, new_state}
+        {:reply, {:error, error}, new_state}
     end
   end
 
