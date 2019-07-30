@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: circleci/elixir:1.8.1
+      - image: circleci/elixir:1.9.1
         environment:
           MIX_ENV: test
 
@@ -63,7 +63,7 @@ jobs:
 
   credo:
     docker:
-      - image: circleci/elixir:1.8.1
+      - image: circleci/elixir:1.9.1
         environment:
           MIX_ENV: test
 
@@ -76,7 +76,7 @@ jobs:
 
   dialyzer:
     docker:
-      - image: circleci/elixir:1.8.1
+      - image: circleci/elixir:1.9.1
         environment:
           MIX_ENV: test
 
@@ -119,7 +119,7 @@ jobs:
 
   test:
     docker:
-      - image: circleci/elixir:1.8.1
+      - image: circleci/elixir:1.9.1
         environment:
           MIX_ENV: test
 
