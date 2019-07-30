@@ -10,7 +10,7 @@ defmodule Moddity.MixProject do
         ignore_warnings: ".dialyzer-ignore"
       ],
       deps: deps(),
-      elixir: "~> 1.8",
+      elixir: "~> 1.9",
       elixirc_options: [warnings_as_errors: true],
       preferred_cli_env: [
         coveralls: :test,
