@@ -10,7 +10,7 @@ defmodule Moddity.Backend.Libusb do
   import Process, only: [{:send_after, 3}]
 
   alias Moddity.{Backend, PrinterStatus}
-  alias Moddity.Backend.Libusb.{Filament, GCode, PausePrinter, ResetPrinter, Status}
+  alias Moddity.Backend.Libusb.{Filament, Firmware, GCode, PausePrinter, ResetPrinter, Status}
 
   @behaviour Backend
 
@@ -80,6 +80,13 @@ defmodule Moddity.Backend.Libusb do
   def unload_filament do
     GenServer.call(__MODULE__, {:unload_filament})
   end
+
+  def enter_dfu_mode do
+    GenServer.call(__MODULE__, {:enter_dfu_mode})
+  end
+
+  def handle_call({:connected?}, _, state = %State{handle: nil}), do: {:reply, false, state}
+  def handle_call({:connected?}, _, state), do: {:reply, true, state}
 
   @doc """
   Catchall to handle when the printer isn't present
@@ -191,6 +198,18 @@ defmodule Moddity.Backend.Libusb do
         Logger.error("error sending gcode command: #{inspect error}")
         {error, new_state} = process_error(error, state)
         {:reply, {:error, error}, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:enter_dfu_mode}, _caller, state = %State{handle: handle}) do
+    case Firmware.transfer_enter_dfu_mode(handle) do
+      {:error, :LUBUSB_ERROR_NO_DEVICE} ->
+        {:reply, :ok, state}
+      error ->
+        Logger.error("Error while trying to send enter dfu mode command: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
     end
   end
 
