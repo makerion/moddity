@@ -3,8 +3,6 @@ defmodule Moddity.Backend.Libusb.GCode do
   Handles the transfer complexities of sending a gcode file to the printer
   """
 
-  alias Moddity.Backend.Libusb.Status
-
   import Moddity.Backend.Libusb.Util, only: [{:read_command_response_bytes, 2}]
 
   require Logger
@@ -71,34 +69,10 @@ defmodule Moddity.Backend.Libusb.GCode do
     end
   end
 
-  @chunk_size 5120
   @gcode_timeout 1000
-
-  def transfer_file(handle, data, transfers_remaining_in_batch \\ 20)
-
-  def transfer_file(handle, data, 0) do
-    case Status.read_raw_status_bytes(handle, 0x83, <<>>, 500) do
-      {:ok, _} -> transfer_file(handle, data, 20)
-      error -> error
-    end
-  end
-
-  def transfer_file(_handle, <<>>, _), do: :ok
-
-  def transfer_file(handle, data, _) when byte_size(data) < @chunk_size do
+  def transfer_file_data(handle, data) do
     case LibUsb.bulk_send(handle, 0x04, data, @gcode_timeout) do
-      {:ok, 0} ->
-        Logger.debug("Sent #{byte_size(data)}. All done!")
-        transfer_file(handle, <<>>, 0)
-      error -> error
-    end
-  end
-
-  def transfer_file(handle, <<data::binary-size(@chunk_size), rest::binary>>, transfers_remaining_in_batch) do
-    case LibUsb.bulk_send(handle, 0x04, data, @gcode_timeout) do
-      {:ok, 0} ->
-        Logger.debug("Sent #{inspect @chunk_size}, #{inspect byte_size(rest)} remaining")
-        transfer_file(handle, rest, transfers_remaining_in_batch - 1)
+      {:ok, 0} -> :ok
       error -> error
     end
   end

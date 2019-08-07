@@ -16,7 +16,7 @@ defmodule Moddity.Backend.Libusb do
 
   defmodule State do
     @moduledoc false
-    defstruct handle: nil
+    defstruct handle: nil, caller: nil
   end
 
   def start_link(_opts) do
@@ -84,19 +84,19 @@ defmodule Moddity.Backend.Libusb do
     end
   end
 
+  @chunk_size 5120
   @impl GenServer
-  def handle_call({:send_gcode, file}, _caller, state = %State{handle: handle}) do
+  def handle_call({:send_gcode, file}, caller, state = %State{handle: handle}) do
     with true <- File.exists?(file),
          {:ok, %File.Stat{size: size}} <- File.stat(file),
          {:ok, checksum} <- Adler32Checksum.compute(file),
          {:ok, _first_preamble} <- GCode.transfer_first_preamble(handle),
          {:ok, _second_preamble} <- GCode.transfer_second_preamble(handle),
          {:ok, _third_preamble} <- GCode.transfer_third_preamble(handle),
-         :ok <- GCode.transfer_file_push(handle, size, checksum),
-         {:ok, gcode} <- File.read(file),
-         :ok <- GCode.transfer_file(handle, gcode) do
+         :ok <- GCode.transfer_file_push(handle, size, checksum) do
 
-      {:reply, :ok, state}
+      send_after(self(), {:transfer_file, file, size}, 10)
+      {:reply, :ok, %{state | caller: caller}}
     else
       false ->
         Logger.error("File does not exist: #{inspect file}")
@@ -137,6 +137,27 @@ defmodule Moddity.Backend.Libusb do
         send_after(self(), :connect_to_printer, 2000)
         {:noreply, state}
     end
+  end
+
+  @impl GenServer
+  def handle_info({:transfer_file, file, size}, state = %{caller: {caller_pid, _tag}, handle: handle}) do
+    chunk_size = @chunk_size
+    file
+    |> File.stream!([], chunk_size)
+    |> Stream.chunk_every(20)
+    |> Stream.with_index()
+    |> Stream.each(fn ({batch, batch_index}) ->
+      progress = round((batch_index * 20 * chunk_size * 100) / size)
+      send(caller_pid, {:send_gcode_update, progress})
+
+      Enum.each(batch, fn (bytes) ->
+        :ok = GCode.transfer_file_data(handle, bytes)
+      end)
+    end)
+    |> Stream.run()
+
+    send(caller_pid, {:send_gcode_finished})
+    {:noreply, %{state | caller: nil}}
   end
 
   defp process_error(error = {:error, reason}, state = %State{handle: handle})

@@ -98,21 +98,19 @@ defmodule Moddity.Driver do
     {:reply, {:error, state.status}, state}
   end
 
-  def handle_call({:send_gcode, file}, from, state) do
-    task = Task.async(fn ->
-      :timer.sleep(1000)
-      state.backend.send_gcode(file)
-    end)
+  def handle_call({:send_gcode, file}, _from, state) do
+    :ok = state.backend.send_gcode(file)
     status =
       %PrinterStatus{
         idle?: false,
         state: :sending_gcode,
         state_friendly: "Sending gcode",
+        job_progress: 0,
         extruder_actual_temperature: 0,
         extruder_target_temperature: 0
       }
-    new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
-    {:noreply, new_state}
+    new_state = %{state | command_in_progress: true, status: status}
+    {:reply, :ok, new_state}
   end
 
   def handle_call({:unload_filament}, _from, state = %{command_in_progress: true}) do
@@ -142,10 +140,24 @@ defmodule Moddity.Driver do
     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
   end
 
-  # send gcode
-  def handle_info({task_pid, :ok}, state = %{task: %Task{ref: task_pid}}) do
-    GenServer.reply(state.caller, :ok)
-    {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
+  def handle_info({:send_gcode_update, progress}, state) do
+    Logger.debug("Sending GCode Update received: #{inspect progress}")
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :sending_gcode,
+        state_friendly: "Sending gcode",
+        job_progress: progress,
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | status: status}
+    {:noreply, new_state}
+  end
+
+  def handle_info({:send_gcode_finished}, state) do
+    Logger.debug("Sending GCode Finished received")
+    {:noreply, %{state | command_in_progress: false}}
   end
 
   # load/unload filament
