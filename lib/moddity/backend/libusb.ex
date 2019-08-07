@@ -36,6 +36,10 @@ defmodule Moddity.Backend.Libusb do
   def terminate(_reason, %State{handle: nil}), do: :ok
   def terminate(_reason, %State{handle: handle}), do: LibUsb.release_handle(handle)
 
+  def connected? do
+    GenServer.call(__MODULE__, {:connected?})
+  end
+
   @impl Backend
   def get_status do
     GenServer.call(__MODULE__, {:get_status})
@@ -234,11 +238,11 @@ defmodule Moddity.Backend.Libusb do
       {:noreply, %{state | handle: handle}}
     else
       nil ->
-        Logger.info("Printer not found, trying again later")
+        Logger.debug("Printer not found, trying again later")
         send_after(self(), :connect_to_printer, 2000)
         {:noreply, state}
       error ->
-        Logger.error("Error, trying again later. #{inspect error}")
+        Logger.debug("Error, trying again later. #{inspect error}")
         send_after(self(), :connect_to_printer, 2000)
         {:noreply, state}
     end
