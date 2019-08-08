@@ -51,6 +51,7 @@ defmodule Moddity.PrinterStatus do
   defp to_human("STATE_PAUSED"), do: "Paused"
   defp to_human("STATE_REMFIL_HEATING"), do: "Unload Filament: Heating"
   defp to_human("STATE_REMFIL_RETRACTING"), do: "Unload Filament: Retracting"
+  defp to_human("STATE_UNPAUSED"), do: "Resuming"
   defp to_human(state), do: "Unknown: #{state}"
 
   defp translate_state("STATE_BUILDING"), do: :building
@@ -71,5 +72,6 @@ defmodule Moddity.PrinterStatus do
   defp translate_state("STATE_PAUSED"), do: :paused
   defp translate_state("STATE_REMFIL_HEATING"), do: :unload_filament_heating
   defp translate_state("STATE_REMFIL_RETRACTING"), do: :unload_filament_retracting
+  defp translate_state("STATE_UNPAUSED"), do: :resuming
   defp translate_state(_), do: :unknown
 end

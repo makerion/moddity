@@ -52,6 +52,16 @@ defmodule PrinterStatusTest do
     } = PrinterStatus.from_raw(raw)
   end
 
+  test "from_raw handles unpaused" do
+    raw = put_in(@status_template, ["status", "state"], "STATE_UNPAUSED")
+    assert %PrinterStatus{
+      state: :resuming,
+      state_friendly: "Resuming",
+      idle?: false,
+      error: 0
+    } = PrinterStatus.from_raw(raw)
+  end
+
   test "from_raw handles net failed" do
     raw = put_in(@status_template, ["status", "state"], "STATE_NET_FAILED")
     assert %PrinterStatus{

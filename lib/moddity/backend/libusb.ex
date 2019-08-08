@@ -10,9 +10,11 @@ defmodule Moddity.Backend.Libusb do
   import Process, only: [{:send_after, 3}]
 
   alias Moddity.{Backend, PrinterStatus}
-  alias Moddity.Backend.Libusb.{Filament, GCode, Status}
+  alias Moddity.Backend.Libusb.{Filament, GCode, PausePrinter, ResetPrinter, Status}
 
   @behaviour Backend
+
+  @button_press "S1 S123"
 
   defmodule State do
     @moduledoc false
@@ -40,6 +42,26 @@ defmodule Moddity.Backend.Libusb do
   end
 
   @impl Backend
+  def reset_printer do
+    GenServer.call(__MODULE__, {:reset_printer})
+  end
+
+  @impl Backend
+  def abort_print do
+    GenServer.call(__MODULE__, {:abort_print})
+  end
+
+  @impl Backend
+  def pause_printer do
+    GenServer.call(__MODULE__, {:pause_printer})
+  end
+
+  @impl Backend
+  def resume_printer do
+    GenServer.call(__MODULE__, {:resume_printer})
+  end
+
+  @impl Backend
   def load_filament do
     GenServer.call(__MODULE__, {:load_filament})
   end
@@ -47,6 +69,11 @@ defmodule Moddity.Backend.Libusb do
   @impl Backend
   def send_gcode(file) do
     GenServer.call(__MODULE__, {:send_gcode, file}, 60_000)
+  end
+
+  @impl Backend
+  def send_gcode_command(line) do
+    GenServer.call(__MODULE__, {:send_gcode_command, line}, 60_000)
   end
 
   @impl Backend
@@ -73,6 +100,54 @@ defmodule Moddity.Backend.Libusb do
   end
 
   @impl GenServer
+  def handle_call({:reset_printer}, _caller, state = %State{handle: handle}) do
+    case ResetPrinter.transfer_reset_printer(handle) do
+      :ok ->
+        {:reply, :ok, state}
+      error ->
+        Logger.error("error resetting printer: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:abort_print}, _caller, state = %State{handle: handle}) do
+    case PausePrinter.transfer_abort_print(handle) do
+      {:ok, modt_status} ->
+        {:reply, {:ok, PrinterStatus.from_raw(modt_status)}, state}
+      error ->
+        Logger.error("error aborting: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:pause_printer}, _caller, state = %State{handle: handle}) do
+    case PausePrinter.transfer_pause_printer(handle) do
+      {:ok, modt_status} ->
+        {:reply, {:ok, PrinterStatus.from_raw(modt_status)}, state}
+      error ->
+        Logger.error("error pausing: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:resume_printer}, _caller, state = %State{handle: handle}) do
+    case PausePrinter.transfer_resume_printer(handle) do
+      {:ok, modt_status} ->
+        {:reply, {:ok, PrinterStatus.from_raw(modt_status)}, state}
+      error ->
+        Logger.error("error resuming: #{inspect error}")
+        {error, new_state} = process_error(error, state)
+        {:reply, error, new_state}
+    end
+  end
+
+  @impl GenServer
   def handle_call({:load_filament}, _caller, state = %State{handle: handle}) do
     case Filament.transfer_load_filament(handle) do
       {:ok, response} ->
@@ -93,16 +168,27 @@ defmodule Moddity.Backend.Libusb do
          {:ok, _first_preamble} <- GCode.transfer_first_preamble(handle),
          {:ok, _second_preamble} <- GCode.transfer_second_preamble(handle),
          {:ok, _third_preamble} <- GCode.transfer_third_preamble(handle),
-         :ok <- GCode.transfer_file_push(handle, size, checksum) do
+           :ok <- GCode.transfer_file_push(handle, size, checksum) do
 
       send_after(self(), {:transfer_file, file, size}, 10)
       {:reply, :ok, %{state | caller: caller}}
     else
       false ->
         Logger.error("File does not exist: #{inspect file}")
-        {:reply, {:error, :file_does_not_exist}, state}
-      {:error, error} ->
+      {:reply, {:error, :file_does_not_exist}, state}
+    {:error, error} ->
         Logger.error("error getting status: #{inspect error}")
+      {error, new_state} = process_error(error, state)
+      {:reply, {:error, error}, new_state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:send_gcode_command, line}, caller, state = %State{handle: handle}) do
+    case GCode.transfer_gcode_command(handle, line) do
+      :ok -> {:reply, :ok, %{state | caller: caller}}
+      {:error, error} ->
+        Logger.error("error sending gcode command: #{inspect error}")
         {error, new_state} = process_error(error, state)
         {:reply, {:error, error}, new_state}
     end
@@ -156,8 +242,25 @@ defmodule Moddity.Backend.Libusb do
     end)
     |> Stream.run()
 
+    press_button(handle)
     send(caller_pid, {:send_gcode_finished})
     {:noreply, %{state | caller: nil}}
+  end
+
+  defp press_button(handle) do
+    case Status.transfer_get_status(handle) do
+      {:ok, modt_status} ->
+        status = PrinterStatus.from_raw(modt_status)
+        case status do
+          %PrinterStatus{state: :job_queued} -> GCode.transfer_gcode_command(handle, @button_press)
+          _ ->
+            :timer.sleep(500)
+            press_button(handle)
+        end
+      _ ->
+        :timer.sleep(500)
+        press_button(handle)
+    end
   end
 
   defp process_error(error = {:error, reason}, state = %State{handle: handle})

@@ -49,80 +49,109 @@ defmodule Moddity.Backend.Simulator do
     GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
   end
 
+  @impl GenServer
   def init(_) do
     send_after(self(), {:update_state, :idle_state}, 4000)
     {:ok, net_failed()}
   end
 
+  @impl Backend
   def get_status do
     GenServer.call(__MODULE__, {:get_status})
   end
 
+  @impl Backend
+  def abort_print, do: :ok
+  @impl Backend
+  def pause_printer, do: :ok
+  @impl Backend
+  def resume_printer, do: :ok
+  @impl Backend
+  def reset_printer, do: :ok
+
+  @impl Backend
   def load_filament do
     GenServer.call(__MODULE__, {:load_filament})
   end
 
+  @impl Backend
   def send_gcode(_file) do
     GenServer.call(__MODULE__, {:send_gcode})
   end
 
+  @impl Backend
+  def send_gcode_command(_line), do: :ok
+
+  @impl Backend
   def unload_filament do
     GenServer.call(__MODULE__, {:unload_filament})
   end
 
+  @impl GenServer
   def handle_call({:get_status}, _from, state) do
     {:reply, {:ok, PrinterStatus.from_raw(state)}, state}
   end
 
+  @impl GenServer
   def handle_call({:load_filament}, _from, state) do
     send_after(self(), {:update_state, :state_loadfil_heating}, 1_000)
     {:reply, :ok, state}
   end
 
+  @impl GenServer
   def handle_call({:send_gcode}, _from, _state) do
     send_after(self(), {:update_state, :state_job_queued}, 10_000)
     {:reply, :ok, state_file_rx()}
   end
 
+  @impl GenServer
   def handle_call({:unload_filament}, _from, state) do
     send_after(self(), {:update_state, :state_remfil_heating}, 1_000)
     {:reply, :ok, state}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :idle_state}, _state) do
     {:noreply, idle_state()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_job_queued}, _state) do
     send_after(self(), {:update_state, :state_building}, 10_000)
     {:noreply, state_job_queued()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_building}, _state) do
     send_after(self(), {:update_state, :state_exec_pause_cmd}, 10_000)
     {:noreply, state_building()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_exec_pause_cmd}, _state) do
     send_after(self(), {:update_state, :idle_state}, 10_000)
     {:noreply, state_exec_pause_cmd()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_loadfil_heating}, _state) do
     send_after(self(), {:update_state, :state_loadfil_extruding}, 20_000)
     {:noreply, state_loadfil_heating()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_loadfil_extruding}, _state) do
     send_after(self(), {:update_state, :idle_state}, 20_000)
     {:noreply, state_loadfil_extruding()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_remfil_heating}, _state) do
     send_after(self(), {:update_state, :state_remfil_retracting}, 20_000)
     {:noreply, state_remfil_heating()}
   end
 
+  @impl GenServer
   def handle_info({:update_state, :state_remfil_retracting}, _state) do
     send_after(self(), {:update_state, :idle_state}, 20_000)
     {:noreply, state_remfil_retracting()}

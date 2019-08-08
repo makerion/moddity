@@ -8,6 +8,18 @@ defmodule Moddity.Backend.Libusb.Util do
   require Logger
 
   @doc """
+  Builds a command from a JSON string (adds the header and ending parenthesis)
+  """
+  def build_command_request_bytes(command) do
+    command_length = byte_size(command) + 1
+    <<low_byte::8, high_byte::8>> = <<command_length::unsigned-integer-16>>
+    inverted_low = ~~~(low_byte)
+    inverted_high = ~~~(high_byte)
+    checksum = <<high_byte::8, low_byte::8, inverted_high::8, inverted_low::8>>
+    "$" <> checksum <> command <> ";"
+  end
+
+  @doc """
   Reads a command response
   """
   def read_command_response_bytes(handle, address) do
