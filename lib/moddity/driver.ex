@@ -16,8 +16,8 @@ defmodule Moddity.Driver do
 
   defstruct []
 
-  alias Moddity.PrinterStatus
   alias Moddity.Firmware.Downloader
+  alias Moddity.PrinterStatus
 
   def start_link(opts) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -187,7 +187,13 @@ defmodule Moddity.Driver do
     Task.async(fn ->
       Downloader.prepare_firmware(url, expected_sha256)
     end)
-    status = %PrinterStatus{firmware_updating?: true, idle?: false, state: :preparing_to_update_firmware, state_friendly: "Firmware Update"}
+    status =
+      %PrinterStatus{
+        firmware_updating?: true,
+        idle?: false,
+        state: :preparing_to_update_firmware,
+        state_friendly: "Firmware Update"
+      }
     new_state = %{state | command_in_progress: true, status: status}
     send_data(status)
     {:reply, :ok, new_state}
@@ -201,7 +207,7 @@ defmodule Moddity.Driver do
         new_state = %{state | status: status}
         send_data(status)
         {:noreply, new_state}
-      error ->
+      _error ->
         status = %{state.status | firmware_updating?: false, state: :error_no_dfu, state_friendly: "DFU Failure"}
         new_state = %{state | status: status}
         send_data(status)
