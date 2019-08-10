@@ -41,6 +41,7 @@ defmodule Moddity.MixProject do
       {:credo, "~> 1.0.0", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0.0-rc.6", only: [:dev, :test], runtime: false},
       {:excoveralls, "~> 0.10", only: :test},
+      {:httpoison, "~> 1.5"},
       {:jason, "~> 1.0"},
       {:mox, "~> 0.5", only: :test}
     ]
