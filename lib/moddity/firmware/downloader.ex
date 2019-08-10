@@ -18,11 +18,28 @@ defmodule Moddity.Firmware.Downloader do
     end
   end
 
-  def apply_firmware do
+  def apply_firmware(caller) do
     file = Path.join(firmware_dir(), "modt_firmware.dfu")
-    command = "dfu-util -d 2b75:0003 -a 0 -s 0x0:leave -D #{file} > /tmp/dfu-output"
-    :os.cmd(String.to_charlist(command))
-    :ok
+    port = Port.open({:spawn_executable, "/usr/bin/dfu-util"}, [:stderr_to_stdout, :binary, :exit_status, args: ["-d", "2b75:0003", "-a", "0", "-s", "0x0:leave", "-D", file]])
+    stream_output(port, caller)
+  end
+
+  defp stream_output(port, caller) do
+    receive do
+      {^port, {:data, data}} ->
+        case Regex.run(~r/[ \t]([1]*[0-9]*[0-9])%/, data) do
+          nil -> nil
+          matches ->
+            progress = Enum.at(matches, 1)
+            send(caller, {:firmware_progress, progress})
+        end
+        stream_output(port, caller)
+      {^port, {:exit_status, 0}} ->
+        {:firmware_progress, :complete}
+      {^port, {:exit_status, status}} ->
+        Logger.error("Firmware update failed, exit code: #{inspect status}")
+        {:firmware_progress, :failed}
+    end
   end
 
   defp firmware_dir do

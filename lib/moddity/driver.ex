@@ -143,8 +143,6 @@ defmodule Moddity.Driver do
         idle?: false,
         state: :sending_load_filament,
         state_friendly: "Sending Load Filament",
-        extruder_actual_temperature: 0,
-        extruder_target_temperature: 0
       }
     new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
     {:noreply, new_state}
@@ -158,10 +156,9 @@ defmodule Moddity.Driver do
         state: :sending_gcode,
         state_friendly: "Sending gcode",
         job_progress: 0,
-        extruder_actual_temperature: 0,
-        extruder_target_temperature: 0
       }
     new_state = %{state | command_in_progress: true, status: status}
+    send_data(status)
     {:reply, :ok, new_state}
   end
 
@@ -180,124 +177,82 @@ defmodule Moddity.Driver do
         idle?: false,
         state: :sending_unload_filament,
         state_friendly: "Sending Unload Filament",
-        extruder_actual_temperature: 0,
-        extruder_target_temperature: 0
       }
     new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
+    send_data(status)
     {:noreply, new_state}
   end
 
   def handle_call({:update_firmware, url, expected_sha256}, _from, state) do
-    Process.send_after(self(), {:update_firmware, url, expected_sha256}, 100)
-    status =
-      %PrinterStatus{
-        idle?: false,
-        state: :preparing_to_update_firmware,
-        state_friendly: "Firmware Update",
-        extruder_actual_temperature: 0,
-        extruder_target_temperature: 0
-      }
-    new_state = %{state | command_in_progress: true, status: status}
-    {:reply, :ok, new_state}
-  end
-
-  def handle_info({:update_firmware, url, expected_sha256}, state) do
     Task.async(fn ->
       Downloader.prepare_firmware(url, expected_sha256)
     end)
-    # if !state.backend.in_dfu? do
-    #   state.backend.enter_dfu_mode
-    #   :timer.sleep
-    # end
-    {:noreply, state}
+    status = %PrinterStatus{idle?: false, state: :preparing_to_update_firmware, state_friendly: "Firmware Update"}
+    new_state = %{state | command_in_progress: true, status: status}
+    send_data(status)
+    {:reply, :ok, new_state}
   end
 
   def handle_info({_ref, {:firmware_downloaded, _file}}, state) do
-    Logger.error("YAY FIRMWARE DOWNLOADED")
     case state.backend.enter_dfu_mode do
       :ok ->
-        status =
-          %PrinterStatus{
-            idle?: false,
-            state: :firmware_downloaded,
-            state_friendly: "Applying Firmware",
-            extruder_actual_temperature: 0,
-            extruder_target_temperature: 0
-          }
         Process.send_after(self(), :apply_firmware, 100)
+        status = %{state.status | state: :firmware_downloaded, state_friendly: "Applying Firmware"}
         new_state = %{state | status: status}
+        send_data(status)
         {:noreply, new_state}
       error ->
         Logger.error("BOO #{inspect error}")
-        status =
-          %PrinterStatus{
-            idle?: false,
-            state: :error_no_dfu,
-            state_friendly: "DFU Failure",
-            extruder_actual_temperature: 0,
-            extruder_target_temperature: 0
-          }
+        status = %{state.status | state: :error_no_dfu, state_friendly: "DFU Failure"}
         new_state = %{state | status: status}
+        send_data(status)
         {:noreply, new_state}
     end
   end
 
   def handle_info({_ref, {:firmware_download_failed, error}}, state) do
     Logger.error("BOO: #{inspect error}")
-    status =
-      %PrinterStatus{
-        idle?: false,
-        state: :firmware_update_failed,
-        state_friendly: "Firmware Update Failed",
-        extruder_actual_temperature: 0,
-        extruder_target_temperature: 0
-      }
+    status = %{state.status | state: :firmware_update_failed, state_friendly: "Firmware Update Failed"}
     new_state = %{state | command_in_progress: false, status: status}
+    send_data(status)
     {:noreply, new_state}
   end
 
   def handle_info(:apply_firmware, state) do
     if state.backend.in_dfu?() do
-      Logger.info("YAY")
-      case Downloader.apply_firmware() do
-        :ok ->
-          Logger.info("SUPER YAY")
-          status =
-            %PrinterStatus{
-              idle?: false,
-              state: :firmware_update_finished,
-              state_friendly: "Update Applied",
-              extruder_actual_temperature: 0,
-              extruder_target_temperature: 0
-            }
-          new_state = %{state | command_in_progress: false, status: status}
-          {:noreply, new_state}
-        error ->
-          Logger.info("SUPER BOO #{inspect error}")
-          status =
-            %PrinterStatus{
-              idle?: false,
-              state: :firmware_update_failed,
-              state_friendly: "Update Failed",
-              extruder_actual_temperature: 0,
-              extruder_target_temperature: 0
-            }
-          new_state = %{state | command_in_progress: false, status: status}
-          {:noreply, new_state}
-      end
+      genserver_pid = self()
+      Task.async(fn ->
+        Downloader.apply_firmware(genserver_pid)
+      end)
+      {:noreply, state}
     else
-      Logger.info("BOO, NO DFU")
-      status =
-        %PrinterStatus{
-          idle?: false,
-          state: :firmware_update_failed,
-          state_friendly: "DFU Failure",
-          extruder_actual_temperature: 0,
-          extruder_target_temperature: 0
-        }
+      status = %{state.status | state: :firmware_update_failed, state_friendly: "DFU Failure"}
       new_state = %{state | command_in_progress: false, status: status}
+      send_data(status)
       {:noreply, new_state}
     end
+  end
+
+  def handle_info({:firmware_progress, percent_complete}, state) do
+    status = %{state.status | state: :firmware_update_in_progress, state_friendly: "Applying Firmware", job_progress: percent_complete}
+    new_state = %{state | status: status}
+    send_data(status)
+    {:noreply, new_state}
+  end
+
+  def handle_info({_ref, {:firmware_progress, :complete}}, state) do
+    status = %{state.status | state: :firmware_update_finished, state_friendly: "Update Applied"}
+    new_state = %{state | command_in_progress: false, status: status}
+    send_data(status)
+    state.backend.connect_to_printer()
+    {:noreply, new_state}
+  end
+
+  def handle_info({_ref, {:firmware_progress, :failed}}, state) do
+    status = %{state.status | state: :firmware_update_failed, state_friendly: "Update Failed"}
+    new_state = %{state | command_in_progress: false, status: status}
+    send_data(status)
+    {:noreply, new_state}
   end
 
   # send gcode failed
@@ -333,9 +288,11 @@ defmodule Moddity.Driver do
   end
 
   # task crashed
-   def handle_info({:DOWN, _ref, :process, _pid, :normal}, state) do
-     {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
-   end
+  def handle_info({:DOWN, ref, :process, _pid, :normal}, state) do
+    Logger.debug("Task finished: #{inspect ref}")
+    {:noreply, %{state | command_in_progress: false, caller: nil, task: nil}}
+  end
+
   def handle_info(:get_status, state) do
     response =
       case _get_status(state) do
