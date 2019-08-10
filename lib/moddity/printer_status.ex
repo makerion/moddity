@@ -4,17 +4,20 @@ defmodule Moddity.PrinterStatus do
   a sanitized version of the raw json that the printer returns.
   """
 
+  require Logger
+
   defstruct [
     :error,
-    :extruder_actual_temperature,
-    :extruder_target_temperature,
     :filament,
+    :firmware_version,
     :idle?,
     :job_progress,
     :job_time_elapsed,
     :state,
     :state_friendly,
-    :state_raw
+    :state_raw,
+    extruder_actual_temperature: 0,
+    extruder_target_temperature: 0
   ]
 
   def from_raw(raw) do
@@ -25,6 +28,7 @@ defmodule Moddity.PrinterStatus do
       error: raw["error"],
       extruder_actual_temperature: get_in(raw, ["status", "extruder_temperature"]),
       extruder_target_temperature: get_in(raw, ["status", "extruder_target_temperature"]),
+      firmware_version: get_in(raw, ["printer", "firmware", "version"]),
       idle?: Enum.member?([:idle, :mech_ready], state),
       job_progress: get_in(raw, ["job", "progress"]),
       state: state,
