@@ -16,8 +16,19 @@ defmodule PrinterStatusTest do
       "extruder_temperature" => 162.16,
       "filament" => "OK",
       "state" => "STATE_IDLE"
+    },
+    "printer" => %{
+      "firmware" => %{
+        "version" => "1.0.0"
+      }
     }
   }
+
+  test "from_raw includes firmware version" do
+    assert %PrinterStatus{
+      firmware_version: "1.0.0",
+    } = PrinterStatus.from_raw(@status_template)
+  end
 
   test "from_raw includes extruder information" do
     assert %PrinterStatus{

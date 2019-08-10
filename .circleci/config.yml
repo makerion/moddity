@@ -44,7 +44,7 @@ jobs:
           paths:
             - .circleci
             - .credo.exs
-            - .dialyzer-ignore
+            # - .dialyzer-ignore
             - .formatter.exs
             - .git
             - .gitignore
@@ -74,48 +74,48 @@ jobs:
       - run: mix local.hex --force
       - run: mix credo --strict
 
-  dialyzer:
-    docker:
-      - image: circleci/elixir:1.9
-        environment:
-          MIX_ENV: test
+  # dialyzer:
+  #   docker:
+  #     - image: circleci/elixir:1.9
+  #       environment:
+  #         MIX_ENV: test
 
-    steps:
-      - attach_workspace:
-          at: .
+  #   steps:
+  #     - attach_workspace:
+  #         at: .
 
-      - run: mix local.hex --force
+  #     - run: mix local.hex --force
 
-      - restore_cache:
-          keys:
-            - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
-            - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+  #     - restore_cache:
+  #         keys:
+  #           - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+  #           - v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
 
-      - run:
-          name: Unpack PLT cache
-          command: |
-            mkdir -p _build/test
-            cp plts/dialyxir*.plt _build/test/ || true
-            mkdir -p ~/.mix
-            cp plts/dialyxir*.plt ~/.mix/ || true
-      - run: mix dialyzer --plt
+  #     - run:
+  #         name: Unpack PLT cache
+  #         command: |
+  #           mkdir -p _build/test
+  #           cp plts/dialyxir*.plt _build/test/ || true
+  #           mkdir -p ~/.mix
+  #           cp plts/dialyxir*.plt ~/.mix/ || true
+  #     - run: mix dialyzer --plt
 
-      - run:
-          name: Pack PLT cache
-          command: |
-            mkdir -p plts
-            cp _build/test/dialyxir*.plt plts/
-            cp ~/.mix/dialyxir*.plt plts/
-      - save_cache:
-          key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
-          paths:
-            - plts
-      - save_cache:
-          key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
-          paths:
-            - plts
+  #     - run:
+  #         name: Pack PLT cache
+  #         command: |
+  #           mkdir -p plts
+  #           cp _build/test/dialyxir*.plt plts/
+  #           cp ~/.mix/dialyxir*.plt plts/
+  #     - save_cache:
+  #         key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}-{{ checksum "mix.lock" }}
+  #         paths:
+  #           - plts
+  #     - save_cache:
+  #         key: v1-mix-dialyzer-{{ checksum "OTP_VERSION.lock" }}-{{ checksum "ELIXIR_VERSION.lock" }}
+  #         paths:
+  #           - plts
 
-      - run: mix dialyzer --halt-exit-status
+  #     - run: mix dialyzer --halt-exit-status
 
   test:
     docker:
@@ -152,9 +152,9 @@ workflows:
       - credo:
           requires:
             - build
-      - dialyzer:
-          requires:
-            - build
+      # - dialyzer:
+      #     requires:
+      #       - build
       - test:
           requires:
             - build

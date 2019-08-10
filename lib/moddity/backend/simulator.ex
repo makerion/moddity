@@ -61,11 +61,20 @@ defmodule Moddity.Backend.Simulator do
   end
 
   @impl Backend
-  def abort_print, do: :ok
+  def abort_print do
+    GenServer.call(__MODULE__, {:get_status})
+  end
+
   @impl Backend
-  def pause_printer, do: :ok
+  def pause_printer do
+    GenServer.call(__MODULE__, {:get_status})
+  end
+
   @impl Backend
-  def resume_printer, do: :ok
+  def resume_printer do
+    GenServer.call(__MODULE__, {:get_status})
+  end
+
   @impl Backend
   def reset_printer, do: :ok
 
