@@ -187,7 +187,7 @@ defmodule Moddity.Driver do
     Task.async(fn ->
       Downloader.prepare_firmware(url, expected_sha256)
     end)
-    status = %PrinterStatus{idle?: false, state: :preparing_to_update_firmware, state_friendly: "Firmware Update"}
+    status = %PrinterStatus{firmware_updating?: true, idle?: false, state: :preparing_to_update_firmware, state_friendly: "Firmware Update"}
     new_state = %{state | command_in_progress: true, status: status}
     send_data(status)
     {:reply, :ok, new_state}
@@ -202,16 +202,14 @@ defmodule Moddity.Driver do
         send_data(status)
         {:noreply, new_state}
       error ->
-        Logger.error("BOO #{inspect error}")
-        status = %{state.status | state: :error_no_dfu, state_friendly: "DFU Failure"}
+        status = %{state.status | firmware_updating?: false, state: :error_no_dfu, state_friendly: "DFU Failure"}
         new_state = %{state | status: status}
         send_data(status)
         {:noreply, new_state}
     end
   end
 
-  def handle_info({_ref, {:firmware_download_failed, error}}, state) do
-    Logger.error("BOO: #{inspect error}")
+  def handle_info({_ref, {:firmware_download_failed, _error}}, state) do
     status = %{state.status | state: :firmware_update_failed, state_friendly: "Firmware Update Failed"}
     new_state = %{state | command_in_progress: false, status: status}
     send_data(status)
@@ -226,7 +224,7 @@ defmodule Moddity.Driver do
       end)
       {:noreply, state}
     else
-      status = %{state.status | state: :firmware_update_failed, state_friendly: "DFU Failure"}
+      status = %{state.status | firmware_updating?: false, state: :firmware_update_failed, state_friendly: "DFU Failure"}
       new_state = %{state | command_in_progress: false, status: status}
       send_data(status)
       {:noreply, new_state}
@@ -241,7 +239,7 @@ defmodule Moddity.Driver do
   end
 
   def handle_info({_ref, {:firmware_progress, :complete}}, state) do
-    status = %{state.status | state: :firmware_update_finished, state_friendly: "Update Applied"}
+    status = %{state.status | firmware_updating?: false, state: :firmware_update_finished, state_friendly: "Update Applied"}
     new_state = %{state | command_in_progress: false, status: status}
     send_data(status)
     state.backend.connect_to_printer()
@@ -249,7 +247,7 @@ defmodule Moddity.Driver do
   end
 
   def handle_info({_ref, {:firmware_progress, :failed}}, state) do
-    status = %{state.status | state: :firmware_update_failed, state_friendly: "Update Failed"}
+    status = %{state.status | firmware_updating?: false, state: :firmware_update_failed, state_friendly: "Update Failed"}
     new_state = %{state | command_in_progress: false, status: status}
     send_data(status)
     {:noreply, new_state}

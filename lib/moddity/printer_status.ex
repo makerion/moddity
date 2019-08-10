@@ -17,7 +17,8 @@ defmodule Moddity.PrinterStatus do
     :state_friendly,
     :state_raw,
     extruder_actual_temperature: 0,
-    extruder_target_temperature: 0
+    extruder_target_temperature: 0,
+    firmware_updating?: false
   ]
 
   def from_raw(raw) do
