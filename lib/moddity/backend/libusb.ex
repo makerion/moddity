@@ -15,6 +15,7 @@ defmodule Moddity.Backend.Libusb do
   @behaviour Backend
 
   @button_press "S1 S123"
+  @long_wait 30_000
 
   defmodule State do
     @moduledoc false
@@ -35,6 +36,10 @@ defmodule Moddity.Backend.Libusb do
   @impl GenServer
   def terminate(_reason, %State{handle: nil}), do: :ok
   def terminate(_reason, %State{handle: handle}), do: LibUsb.release_handle(handle)
+
+  def connect_to_printer do
+    GenServer.call(__MODULE__, {:connect_to_printer})
+  end
 
   def connected? do
     GenServer.call(__MODULE__, {:connected?})
@@ -80,12 +85,12 @@ defmodule Moddity.Backend.Libusb do
 
   @impl Backend
   def send_gcode(file) do
-    GenServer.call(__MODULE__, {:send_gcode, file}, 60_000)
+    GenServer.call(__MODULE__, {:send_gcode, file}, @long_wait)
   end
 
   @impl Backend
   def send_gcode_command(line) do
-    GenServer.call(__MODULE__, {:send_gcode_command, line}, 60_000)
+    GenServer.call(__MODULE__, {:send_gcode_command, line}, @long_wait)
   end
 
   @impl Backend
@@ -100,15 +105,25 @@ defmodule Moddity.Backend.Libusb do
   def handle_call({:connected?}, _, state = %State{handle: nil}), do: {:reply, false, state}
   def handle_call({:connected?}, _, state), do: {:reply, true, state}
 
+  def handle_call({:connect_to_printer}, _, state) do
+    Process.send_after(self(), :connect_to_printer, 5_000)
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:enter_dfu_mode}, _, state = %State{handle: nil}), do: {:reply, :ok, state}
+
   @impl GenServer
   def handle_call({:enter_dfu_mode}, _caller, state = %State{handle: handle}) do
     if in_dfu?() do
-      {:reply, :ok, state}
+      LibUsb.release_handle(handle)
+      send_after(self(), :connect_to_printer, @long_wait)
+      {:reply, :ok, %{state | handle: nil}}
     else
       case Firmware.transfer_enter_dfu_mode(handle) do
-        {:error, :LUBUSB_ERROR_NO_DEVICE} ->
-          :timer.sleep(2000)
-          {:reply, :ok, state}
+        :ok ->
+          LibUsb.release_handle(handle)
+          send_after(self(), :connect_to_printer, @long_wait)
+          {:reply, :ok, %{state | handle: nil}}
         error ->
           Logger.error("Error while trying to send enter dfu mode command: #{inspect error}")
           {error, new_state} = process_error(error, state)
@@ -243,6 +258,8 @@ defmodule Moddity.Backend.Libusb do
   end
 
   @impl GenServer
+  def handle_info(:connect_to_printer, state = %State{handle: handle}) when not is_nil(handle), do: {:noreply, state}
+
   def handle_info(:connect_to_printer, state = %State{}) do
     list = LibUsb.list_devices()
     with modt when not is_nil(modt) <- Enum.find(list, fn (device) -> device[:idVendor] == 0x2B75 && device[:idProduct] == 0x0002 end),
@@ -253,7 +270,7 @@ defmodule Moddity.Backend.Libusb do
       nil ->
         if in_dfu?(list) do
           Logger.debug("Printer is in dfu mode, trying again later")
-          send_after(self(), :connect_to_printer, 60_000)
+          send_after(self(), :connect_to_printer, @long_wait)
         else
           Logger.debug("Printer not found, trying again later")
           send_after(self(), :connect_to_printer, 2000)
