@@ -17,6 +17,7 @@ defmodule Moddity.Driver do
   defstruct []
 
   alias Moddity.PrinterStatus
+  alias Moddity.Firmware.Downloader
 
   def start_link(opts) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -44,14 +45,19 @@ defmodule Moddity.Driver do
     Registry.register(Registry.PrinterStatusEvents, :printer_status_event, [])
   end
 
+  def abort_print(opts \\ []) do
+    pid = Keyword.get(opts, :pid, __MODULE__)
+    GenServer.call(pid, {:abort_print}, @timeout)
+  end
+
   def get_status(opts \\ []) do
     pid = Keyword.get(opts, :pid, __MODULE__)
     GenServer.call(pid, {:get_status, System.monotonic_time(:millisecond)}, @timeout)
   end
 
-  def abort_print(opts \\ []) do
+  def load_filament(opts \\ []) do
     pid = Keyword.get(opts, :pid, __MODULE__)
-    GenServer.call(pid, {:abort_print}, @timeout)
+    GenServer.call(pid, {:load_filament}, @timeout)
   end
 
   def pause_printer(opts \\ []) do
@@ -59,19 +65,14 @@ defmodule Moddity.Driver do
     GenServer.call(pid, {:pause_printer}, @timeout)
   end
 
-  def resume_printer(opts \\ []) do
-    pid = Keyword.get(opts, :pid, __MODULE__)
-    GenServer.call(pid, {:resume_printer}, @timeout)
-  end
-
   def reset_printer(opts \\ []) do
     pid = Keyword.get(opts, :pid, __MODULE__)
     GenServer.call(pid, {:reset_printer}, @timeout)
   end
 
-  def load_filament(opts \\ []) do
+  def resume_printer(opts \\ []) do
     pid = Keyword.get(opts, :pid, __MODULE__)
-    GenServer.call(pid, {:load_filament}, @timeout)
+    GenServer.call(pid, {:resume_printer}, @timeout)
   end
 
   def send_gcode(file, opts \\ []) do
@@ -89,6 +90,11 @@ defmodule Moddity.Driver do
     GenServer.call(pid, {:unload_filament}, @timeout)
   end
 
+  def update_firmware(url, expected_sha256, opts \\ []) do
+    pid = Keyword.get(opts, :pid, __MODULE__)
+    GenServer.call(pid, {:update_firmware, url, expected_sha256}, @timeout)
+  end
+
   def handle_call({:get_status, now}, _from, state = %{last_status_fetch: fetched})
   when ((not is_nil(fetched)) and now < fetched + 1000) do
     {:reply, {:ok, state.status}, state}
@@ -98,7 +104,7 @@ defmodule Moddity.Driver do
     Tuple.insert_at(_get_status(state), 0, :reply)
   end
 
-  def handle_call({:abort_print}, _from, state = %{command_in_progress: true}) do
+  def handle_call(_, _from, state = %{command_in_progress: true}) do
     {:reply, {:error, state.status}, state}
   end
 
@@ -109,10 +115,6 @@ defmodule Moddity.Driver do
     end
   end
 
-  def handle_call({:resume_printer}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
-  end
-
   def handle_call({:resume_printer}, _from, state) do
     case state.backend.resume_printer() do
       {:ok, _} -> Tuple.insert_at(_get_status(state), 0, :reply)
@@ -120,16 +122,8 @@ defmodule Moddity.Driver do
     end
   end
 
-  def handle_call({:reset_printer}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
-  end
-
   def handle_call({:reset_printer}, _from, state) do
     state.backend.reset_printer()
-  end
-
-  def handle_call({:pause_printer}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
   end
 
   def handle_call({:pause_printer}, _from, state) do
@@ -137,10 +131,6 @@ defmodule Moddity.Driver do
       {:ok, _} -> Tuple.insert_at(_get_status(state), 0, :reply)
       error -> error
     end
-  end
-
-  def handle_call({:load_filament}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
   end
 
   def handle_call({:load_filament}, from, state) do
@@ -160,10 +150,6 @@ defmodule Moddity.Driver do
     {:noreply, new_state}
   end
 
-  def handle_call({:send_gcode, _}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
-  end
-
   def handle_call({:send_gcode, file}, _from, state) do
     :ok = state.backend.send_gcode(file)
     status =
@@ -179,17 +165,9 @@ defmodule Moddity.Driver do
     {:reply, :ok, new_state}
   end
 
-  def handle_call({:send_gcode_command, _}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
-  end
-
   def handle_call({:send_gcode_command, line}, _from, state) do
     :ok = state.backend.send_gcode_command(line)
     {:reply, :ok, state}
-  end
-
-  def handle_call({:unload_filament}, _from, state = %{command_in_progress: true}) do
-    {:reply, {:error, state.status}, state}
   end
 
   def handle_call({:unload_filament}, from, state) do
@@ -207,6 +185,119 @@ defmodule Moddity.Driver do
       }
     new_state = %{state | caller: from, command_in_progress: true, task: task, status: status}
     {:noreply, new_state}
+  end
+
+  def handle_call({:update_firmware, url, expected_sha256}, _from, state) do
+    Process.send_after(self(), {:update_firmware, url, expected_sha256}, 100)
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :preparing_to_update_firmware,
+        state_friendly: "Firmware Update",
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | command_in_progress: true, status: status}
+    {:reply, :ok, new_state}
+  end
+
+  def handle_info({:update_firmware, url, expected_sha256}, state) do
+    Task.async(fn ->
+      Downloader.prepare_firmware(url, expected_sha256)
+    end)
+    # if !state.backend.in_dfu? do
+    #   state.backend.enter_dfu_mode
+    #   :timer.sleep
+    # end
+    {:noreply, state}
+  end
+
+  def handle_info({_ref, {:firmware_downloaded, _file}}, state) do
+    Logger.error("YAY FIRMWARE DOWNLOADED")
+    case state.backend.enter_dfu_mode do
+      :ok ->
+        status =
+          %PrinterStatus{
+            idle?: false,
+            state: :firmware_downloaded,
+            state_friendly: "Applying Firmware",
+            extruder_actual_temperature: 0,
+            extruder_target_temperature: 0
+          }
+        Process.send_after(self(), :apply_firmware, 100)
+        new_state = %{state | status: status}
+        {:noreply, new_state}
+      error ->
+        Logger.error("BOO #{inspect error}")
+        status =
+          %PrinterStatus{
+            idle?: false,
+            state: :error_no_dfu,
+            state_friendly: "DFU Failure",
+            extruder_actual_temperature: 0,
+            extruder_target_temperature: 0
+          }
+        new_state = %{state | status: status}
+        {:noreply, new_state}
+    end
+  end
+
+  def handle_info({_ref, {:firmware_download_failed, error}}, state) do
+    Logger.error("BOO: #{inspect error}")
+    status =
+      %PrinterStatus{
+        idle?: false,
+        state: :firmware_update_failed,
+        state_friendly: "Firmware Update Failed",
+        extruder_actual_temperature: 0,
+        extruder_target_temperature: 0
+      }
+    new_state = %{state | command_in_progress: false, status: status}
+    {:noreply, new_state}
+  end
+
+  def handle_info(:apply_firmware, state) do
+    if state.backend.in_dfu?() do
+      Logger.info("YAY")
+      case Downloader.apply_firmware() do
+        :ok ->
+          Logger.info("SUPER YAY")
+          status =
+            %PrinterStatus{
+              idle?: false,
+              state: :firmware_update_finished,
+              state_friendly: "Update Applied",
+              extruder_actual_temperature: 0,
+              extruder_target_temperature: 0
+            }
+          new_state = %{state | command_in_progress: false, status: status}
+          {:noreply, new_state}
+        error ->
+          Logger.info("SUPER BOO #{inspect error}")
+          status =
+            %PrinterStatus{
+              idle?: false,
+              state: :firmware_update_failed,
+              state_friendly: "Update Failed",
+              extruder_actual_temperature: 0,
+              extruder_target_temperature: 0
+            }
+          new_state = %{state | command_in_progress: false, status: status}
+          {:noreply, new_state}
+      end
+    else
+      Logger.info("BOO, NO DFU")
+      status =
+        %PrinterStatus{
+          idle?: false,
+          state: :firmware_update_failed,
+          state_friendly: "DFU Failure",
+          extruder_actual_temperature: 0,
+          extruder_target_temperature: 0
+        }
+      new_state = %{state | command_in_progress: false, status: status}
+      {:noreply, new_state}
+    end
   end
 
   # send gcode failed

@@ -40,6 +40,14 @@ defmodule Moddity.Backend.Libusb do
     GenServer.call(__MODULE__, {:connected?})
   end
 
+  def in_dfu? do
+    in_dfu?(LibUsb.list_devices())
+  end
+
+  def in_dfu?(list) do
+    Enum.find(list, fn (device) -> device[:idVendor] == 0x2B75 && device[:idProduct] == 0x0003 end)
+  end
+
   @impl Backend
   def get_status do
     GenServer.call(__MODULE__, {:get_status})
@@ -91,6 +99,23 @@ defmodule Moddity.Backend.Libusb do
 
   def handle_call({:connected?}, _, state = %State{handle: nil}), do: {:reply, false, state}
   def handle_call({:connected?}, _, state), do: {:reply, true, state}
+
+  @impl GenServer
+  def handle_call({:enter_dfu_mode}, _caller, state = %State{handle: handle}) do
+    if in_dfu?() do
+      {:reply, :ok, state}
+    else
+      case Firmware.transfer_enter_dfu_mode(handle) do
+        {:error, :LUBUSB_ERROR_NO_DEVICE} ->
+          :timer.sleep(2000)
+          {:reply, :ok, state}
+        error ->
+          Logger.error("Error while trying to send enter dfu mode command: #{inspect error}")
+          {error, new_state} = process_error(error, state)
+          {:reply, error, new_state}
+      end
+    end
+  end
 
   @doc """
   Catchall to handle when the printer isn't present
@@ -206,18 +231,6 @@ defmodule Moddity.Backend.Libusb do
   end
 
   @impl GenServer
-  def handle_call({:enter_dfu_mode}, _caller, state = %State{handle: handle}) do
-    case Firmware.transfer_enter_dfu_mode(handle) do
-      {:error, :LUBUSB_ERROR_NO_DEVICE} ->
-        {:reply, :ok, state}
-      error ->
-        Logger.error("Error while trying to send enter dfu mode command: #{inspect error}")
-        {error, new_state} = process_error(error, state)
-        {:reply, error, new_state}
-    end
-  end
-
-  @impl GenServer
   def handle_call({:unload_filament}, _caller, state = %State{handle: handle}) do
     case Filament.transfer_unload_filament(handle) do
       {:ok, response} ->
@@ -231,15 +244,20 @@ defmodule Moddity.Backend.Libusb do
 
   @impl GenServer
   def handle_info(:connect_to_printer, state = %State{}) do
-    with list <- LibUsb.list_devices(),
-         modt when not is_nil(modt) <- Enum.find(list, fn (device) -> device[:idVendor] == 11_125 && device[:idProduct] == 2 end),
+    list = LibUsb.list_devices()
+    with modt when not is_nil(modt) <- Enum.find(list, fn (device) -> device[:idVendor] == 0x2B75 && device[:idProduct] == 0x0002 end),
          {:ok, handle} <- LibUsb.get_handle(modt.idVendor, modt.idProduct) do
 
       {:noreply, %{state | handle: handle}}
     else
       nil ->
-        Logger.debug("Printer not found, trying again later")
-        send_after(self(), :connect_to_printer, 2000)
+        if in_dfu?(list) do
+          Logger.debug("Printer is in dfu mode, trying again later")
+          send_after(self(), :connect_to_printer, 60_000)
+        else
+          Logger.debug("Printer not found, trying again later")
+          send_after(self(), :connect_to_printer, 2000)
+        end
         {:noreply, state}
       error ->
         Logger.debug("Error, trying again later. #{inspect error}")
